@@ -10,9 +10,9 @@ dotenv.config();
 
 // Import routes
 const authRoutes = require("./routes/auth.js");
-const userRoutes = require("./routes/User.js");
+const userRoutes = require("./routes/user.js");
 const productRoutes = require("./routes/products.js");
-const adminRoutes = require("./routes/Admin.js");
+const adminRoutes = require("./routes/admin.js");
 // const orderRoutes = require('./routes/orders.js');
 // const vendorRoutes = require('./routes/vendors.js');
 // const reviewRoutes = require('./routes/reviews.js');
@@ -44,7 +44,7 @@ app.use("/api/", limiter);
 // CORS configuration
 app.use(cors(corsOptions));
 
-// Body parsing middleware 
+// Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
