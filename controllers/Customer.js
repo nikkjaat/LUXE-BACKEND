@@ -198,6 +198,8 @@ exports.removeFromWishlist = async (req, res, next) => {
     const userId = req.user.id; // Assuming user ID is stored in req.user by isAuth middleware
     const { id } = req.params;
 
+    console.log(id);
+
     // Find the user and update their wishlist
     const user = await User.findByIdAndUpdate(
       userId,
