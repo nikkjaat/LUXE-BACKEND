@@ -59,6 +59,95 @@ const userSchema = new mongoose.Schema(
     lastLogin: {
       type: Date,
     },
+    wishlist: [
+      {
+        productId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Product",
+          required: true,
+        },
+        addedAt: { type: Date, default: Date.now },
+      },
+    ],
+    cart: [
+      {
+        productId: {
+          type: mongoose.Schema.Types.ObjectId,
+          required: true,
+          ref: "Product",
+        },
+        quantity: {
+          type: Number,
+          default: 1,
+          min: 1,
+        },
+        size: {
+          type: String,
+          enum: ["S", "M", "L", "XL", "XXL"],
+          default: "M",
+        },
+        addedAt: { type: Date, default: Date.now },
+      },
+    ],
+    orders: [
+      {
+        orderId: {
+          type: String,
+        },
+        orderDate: {
+          type: Date,
+          default: Date.now,
+        },
+        status: {
+          type: String,
+          enum: ["pending", "completed", "cancelled"],
+          default: "pending",
+        },
+        totalAmount: {
+          type: Number,
+          required: true,
+        },
+        items: [
+          {
+            productId: {
+              type: String,
+              required: true,
+            },
+            quantity: {
+              type: Number,
+              default: 1,
+              min: 1,
+            },
+            price: {
+              type: Number,
+              required: true,
+            },
+          },
+        ],
+      },
+    ],
+    reviews: [
+      {
+        productId: {
+          type: String,
+          required: true,
+        },
+        rating: {
+          type: Number,
+          required: true,
+          min: 1,
+          max: 5,
+        },
+        comment: {
+          type: String,
+          maxlength: [500, "Comment cannot exceed 500 characters"],
+        },
+        reviewDate: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
     // Vendor specific fields
     vendorInfo: {
       shopName: String,
