@@ -18,64 +18,85 @@ exports.getCartItems = async (req, res, next) => {
   }
 };
 
-exports.addToCart = async (req, res, next) => {
+// Ultra-simple addToCart
+exports.addToCart = async (req, res) => {
   try {
-    const userId = req.user.id; // Assuming user ID is stored in req.user by isAuth middleware
-    let { id, quantity } = req.body;
+    const user = await User.findById(req.user.id);
+    const { id, quantity = 1 } = req.body;
 
-    quantity = quantity || 1; // Default to 1 if quantity is not provided
+    const cartItem = user.cart.find((item) => item.productId.equals(id));
 
-    // Find the user and update their cart
-    //if quantity is not provided, default to 1
-
-    // if product is already in cart, update quantity
-    const existingCartItem = await User.findOne({
-      _id: userId,
-      "cart.productId": id,
-    });
-    if (existingCartItem) {
-      const updatedUser = await User.findOneAndUpdate(
-        { _id: userId, "cart.productId": id },
-
-        { $inc: { "cart.$.quantity": quantity } },
-        { new: true }
-      ).populate("cart.productId");
-      console.log("Product quantity updated in cart:", updatedUser.cart);
-      return res.status(200).json({
-        success: true,
-        message: "Product quantity updated in cart successfully",
-        cartItems: updatedUser.cart,
-      });
-    }
-    // If product is not in cart, add it
-    const user = await User.findByIdAndUpdate(
-      userId,
-      {
-        $addToSet: {
-          cart: { productId: id, quantity: quantity },
-        },
-      },
-      { new: true }
-    ).populate("cart.productId");
-    // console.log("Product added to cart:", user.cart);
-    if (!user) {
-      return res.status(404).json({
-        message: "User not found",
-      });
+    if (cartItem) {
+      cartItem.quantity += quantity;
+    } else {
+      user.cart.push({ productId: id, quantity });
     }
 
-    res.status(200).json({
-      success: true,
-      message: "Product added to cart successfully",
-      cartItems: user.cart,
-    });
+    await user.save();
+    await user.populate("cart.productId");
+
+    res.json({ success: true, cartItems: user.cart });
   } catch (error) {
-    console.error("❌ Error adding to cart:", error.message);
     res
       .status(500)
-      .json({ message: "Failed to add product to cart", error: error.message });
+      .json({ message: "Error updating cart", error: error.message });
   }
 };
+
+// exports.addToCart = async (req, res, next) => {
+//   try {
+//     const userId = req.user.id; // Assuming user ID is stored in req.user by isAuth middleware
+//     let { id, quantity } = req.body;
+//     console.log(id);
+//     quantity = quantity || 1; // Default to 1 if quantity is not provided
+//     // Find the user and update their cart
+//     //if quantity is not provided, default to 1
+//     // if product is already in cart, update quantity
+//     const existingCartItem = await User.findOne({
+//       _id: userId,
+//       "cart.productId": id,
+//     });
+//     if (existingCartItem) {
+//       const updatedUser = await User.findOneAndUpdate(
+//         { _id: userId, "cart.productId": id },
+//         { $inc: { "cart.$.quantity": quantity } },
+//         { new: true }
+//       ).populate("cart.productId");
+//       console.log("Product quantity updated in cart:", updatedUser.cart);
+//       return res.status(200).json({
+//         success: true,
+//         message: "Product quantity updated in cart successfully",
+//         cartItems: updatedUser.cart,
+//       });
+//     }
+//     // If product is not in cart, add it
+//     const user = await User.findByIdAndUpdate(
+//       userId,
+//       {
+//         $addToSet: {
+//           cart: { productId: id, quantity: quantity },
+//         },
+//       },
+//       { new: true }
+//     ).populate("cart.productId");
+//     // console.log("Product added to cart:", user.cart);
+//     if (!user) {
+//       return res.status(404).json({
+//         message: "User not found",
+//       });
+//     }
+//     res.status(200).json({
+//       success: true,
+//       message: "Product added to cart successfully",
+//       cartItems: user.cart,
+//     });
+//   } catch (error) {
+//     console.error("❌ Error adding to cart:", error.message);
+//     res
+//       .status(500)
+//       .json({ message: "Failed to add product to cart", error: error.message });
+//   }
+// };
 
 exports.updateQuantity = async (req, res, next) => {
   try {
@@ -89,13 +110,11 @@ exports.updateQuantity = async (req, res, next) => {
       { $set: { "cart.$.quantity": quantity } },
       { new: true }
     ).populate("cart.productId");
-
     if (!user) {
       return res.status(404).json({
         message: "User or product not found in cart",
       });
     }
-
     res.status(200).json({
       success: true,
       message: "Cart item quantity updated successfully",
@@ -197,8 +216,6 @@ exports.removeFromWishlist = async (req, res, next) => {
   try {
     const userId = req.user.id; // Assuming user ID is stored in req.user by isAuth middleware
     const { id } = req.params;
-
-    console.log(id);
 
     // Find the user and update their wishlist
     const user = await User.findByIdAndUpdate(
