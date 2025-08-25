@@ -60,6 +60,18 @@ exports.getVendors = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching vendors:", error);
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ message: error });
+  }
+};
+
+exports.getAllUsers = async (req, res, next) => {
+  try {
+    const users = await User.find({}).lean();
+    res.status(200).json({
+      success: true,
+      users,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error });
   }
 };
