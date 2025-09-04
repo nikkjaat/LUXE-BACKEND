@@ -6,12 +6,12 @@ const productSchema = new mongoose.Schema(
       type: String,
       required: [true, "Product name is required"],
       trim: true,
-      maxlength: [100, "Product name cannot exceed 100 characters"],
+      maxlength: [200, "Product name cannot exceed 200 characters"],
     },
     description: {
       type: String,
       required: [true, "Product description is required"],
-      maxlength: [2000, "Description cannot exceed 2000 characters"],
+      maxlength: [5000, "Description cannot exceed 5000 characters"],
     },
     price: {
       type: Number,
@@ -26,12 +26,12 @@ const productSchema = new mongoose.Schema(
       type: String,
       required: [true, "Product category is required"],
       enum: [
-        "accessories",
         "women",
         "men",
-        "home",
         "electronics",
         "beauty",
+        "home",
+        "accessories",
         "sports",
         "kids",
       ],
@@ -44,39 +44,15 @@ const productSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    images: [
-      {
-        url: {
-          type: String,
-          required: true,
-        },
-        publicId: String,
-        alt: String,
-      },
-    ],
     stock: {
       type: Number,
       required: [true, "Stock quantity is required"],
       min: [0, "Stock cannot be negative"],
       default: 0,
     },
-    sku: {
-      type: String,
-      unique: true,
-      sparse: true,
-    },
-    vendor: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: [true, "Vendor is required"],
-    },
-    vendorName: {
-      type: String,
-      required: true,
-    },
     status: {
       type: String,
-      enum: ["active", "inactive", "out_of_stock", "discontinued"],
+      enum: ["active", "inactive", "draft"],
       default: "active",
     },
     badge: {
@@ -89,24 +65,115 @@ const productSchema = new mongoose.Schema(
         "Trending",
         "Premium",
         "Sale",
+        "Featured",
+        "Eco-Friendly",
+        "Handmade",
       ],
     },
+    images: [
+      {
+        url: {
+          type: String,
+          required: true,
+        },
+        name: String,
+        size: Number,
+        publicId: String,
+        alt: String,
+      },
+    ],
+
+    // Category-specific specifications stored as flexible object
     specifications: {
-      weight: Number,
+      // Common fields across categories
+      size: [String], // For clothing, sports, kids
+      color: [String], // All categories
+      material: String, // Fashion, home, accessories, sports, kids
       dimensions: {
         length: Number,
         width: Number,
         height: Number,
       },
-      material: String,
-      color: [String],
-      size: [String],
+      weight: Number,
+
+      // Women's Fashion specific
+      careInstructions: String,
+      fitType: String, // Regular, Slim, Loose, Oversized, Tight
+      occasion: [String], // Casual, Formal, Party, Work, Sports, Beach
+      season: [String], // Spring, Summer, Fall, Winter, All Season
+
+      // Men's Fashion specific
+      collarType: String, // Regular, Button-down, Spread, Cutaway, Band
+
+      // Electronics specific
+      warranty: String, // 6 months, 1 year, 2 years, etc.
+      connectivity: [String], // WiFi, Bluetooth, USB-C, etc.
+      powerSource: String, // Battery, AC Adapter, USB, Solar, Rechargeable
+      compatibility: String,
+      batteryLife: String,
+
+      // Beauty specific
+      skinType: [String], // All Skin Types, Dry, Oily, Combination, etc.
+      ingredients: String,
+      volume: String, // 50ml, 100g
+      shelfLife: String, // 6 months, 12 months, etc.
+      application: String,
+      benefits: [String], // Anti-aging, Moisturizing, Brightening, etc.
+      crueltyFree: Boolean,
+      vegan: Boolean,
+
+      // Home & Living specific
+      roomType: [String], // Living Room, Bedroom, Kitchen, etc.
+      style: String, // Modern, Traditional, Contemporary, etc.
+      assembly: Boolean,
+
+      // Accessories specific
+      closure: String, // Zipper, Magnetic, Buckle, etc.
+      waterResistant: Boolean,
+      giftWrapping: Boolean,
+
+      // Sports & Fitness specific
+      sportCategory: [String], // Running, Gym, Yoga, etc.
+      features: [String], // Moisture Wicking, Breathable, etc.
+      skillLevel: String, // Beginner, Intermediate, Advanced, etc.
+      indoor: Boolean,
+      outdoor: Boolean,
+
+      // Kids & Baby specific
+      ageGroup: String, // 0-6 months, 6-12 months, etc.
+      safetyStandards: [String], // CE Certified, CPSIA Compliant, etc.
+      washable: Boolean,
+      chokeHazard: Boolean,
+      educational: String,
     },
-    seo: {
-      metaTitle: String,
-      metaDescription: String,
-      keywords: [String],
+
+    // Tags for search and categorization
+    tags: [String],
+
+    // SEO fields
+    seoTitle: String,
+    seoDescription: String,
+    seoKeywords: String,
+
+    // Vendor information
+    vendor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: [true, "Vendor is required"],
     },
+    vendorName: {
+      type: String,
+      required: true,
+    },
+
+    // Auto-generated fields
+    sku: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+
+    // Performance metrics
     rating: {
       average: {
         type: Number,
@@ -125,11 +192,6 @@ const productSchema = new mongoose.Schema(
         ref: "Review",
       },
     ],
-    tags: [String],
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
     viewCount: {
       type: Number,
       default: 0,
@@ -138,6 +200,10 @@ const productSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,
@@ -145,13 +211,16 @@ const productSchema = new mongoose.Schema(
 );
 
 // Indexes for better query performance
-productSchema.index({ name: "text", description: "text" });
+productSchema.index({ name: "text", description: "text", tags: "text" });
 productSchema.index({ category: 1 });
 productSchema.index({ vendor: 1 });
 productSchema.index({ status: 1 });
 productSchema.index({ price: 1 });
 productSchema.index({ "rating.average": -1 });
 productSchema.index({ createdAt: -1 });
+productSchema.index({ badge: 1 });
+productSchema.index({ "specifications.size": 1 });
+productSchema.index({ "specifications.color": 1 });
 
 // Generate SKU before saving
 productSchema.pre("save", function (next) {
@@ -172,5 +241,24 @@ productSchema.pre("save", async function (next) {
   }
   next();
 });
+
+// Virtual for discount percentage
+productSchema.virtual("discountPercentage").get(function () {
+  if (this.originalPrice && this.originalPrice > this.price) {
+    return Math.round(
+      ((this.originalPrice - this.price) / this.originalPrice) * 100
+    );
+  }
+  return 0;
+});
+
+// Virtual for availability status
+productSchema.virtual("isAvailable").get(function () {
+  return this.status === "active" && this.stock > 0;
+});
+
+// Ensure virtual fields are serialized
+productSchema.set("toJSON", { virtuals: true });
+productSchema.set("toObject", { virtuals: true });
 
 module.exports = mongoose.model("Product", productSchema);

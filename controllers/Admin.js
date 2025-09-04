@@ -1,4 +1,6 @@
+const Product = require("../models/Product");
 const User = require("../models/User");
+const mongoose = require("mongoose");
 
 exports.getVendorApplications = async (req, res) => {
   try {
@@ -73,5 +75,100 @@ exports.getAllUsers = async (req, res, next) => {
     });
   } catch (error) {
     res.status(500).json({ message: error });
+  }
+};
+
+exports.adminActivateUser = async (req, res, next) => {
+  try {
+    const userId = req.params.id;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    user.isActive = true;
+    await user.save();
+
+    if (user.role === "vendor") {
+      // If the user is a vendor, also set their vendorInfo status to 'active'
+      user.vendorInfo.status = "approved";
+      await user.save();
+      // all products from this vendor should be set to active
+      await Product.updateMany(
+        { vendor: user._id },
+        { $set: { status: "active" } }
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `User has been ${user.isActive ? "activated" : "suspended"}`,
+      user,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error });
+  }
+};
+
+exports.adminSuspendUser = async (req, res, next) => {
+  try {
+    const userId = req.params.id;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    user.isActive = false;
+    await user.save();
+
+    if (user.role === "vendor") {
+      // If the user is a vendor, also set their vendorInfo status to 'suspended
+      user.vendorInfo.status = "suspended";
+      await user.save();
+
+      // all products from this vendor should be set to inactive
+      await Product.updateMany(
+        { vendor: user._id },
+        { $set: { status: "inactive" } }
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `User has been ${user.isActive ? "activated" : "suspended"}`,
+      user,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error });
+  }
+};
+
+exports.deleteUser = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const userId = req.params.id;
+
+    // Delete user
+    const user = await User.findByIdAndDelete(userId).session(session);
+    if (!user) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Delete all products from this user
+    await Product.deleteMany({ vendor: userId }).session(session);
+
+    await session.commitTransaction();
+    session.endSession();
+
+    res.status(200).json({
+      success: true,
+      message: "User and their products deleted successfully",
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    res.status(500).json({ success: false, message: error.message });
   }
 };

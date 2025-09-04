@@ -61,8 +61,12 @@ const authorize = (...roles) => {
   };
 };
 
-const vendorAuth = async (req, res, next) => {
+const adminVendorAuth = async (req, res, next) => {
   try {
+    if (req.user.role === "admin") {
+      return next(); // Allow admins as well
+    }
+
     if (req.user.role !== "vendor") {
       return res.status(403).json({
         success: false,
@@ -86,5 +90,5 @@ const vendorAuth = async (req, res, next) => {
 module.exports = {
   protect,
   authorize,
-  vendorAuth,
+  adminVendorAuth,
 };

@@ -112,6 +112,13 @@ const login = async (req, res, next) => {
       });
     }
 
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Account is suspended. Please contact support.",
+      });
+    }
+
     // Check if password matches
     const isMatch = await user.comparePassword(password);
 

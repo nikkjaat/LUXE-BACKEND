@@ -15,7 +15,11 @@ const {
   deleteProductReview,
 } = require("../controllers/ProductController.js");
 
-const { protect, authorize, vendorAuth } = require("../middleware/auth.js");
+const {
+  protect,
+  authorize,
+  adminVendorAuth,
+} = require("../middleware/auth.js");
 const { validate } = require("../middleware/validate.js");
 const { upload } = require("../middleware/upload.js");
 
@@ -87,7 +91,7 @@ router.delete("/reviews/:reviewId", protect, deleteProductReview);
 router.post(
   "/",
   protect,
-  vendorAuth,
+  adminVendorAuth,
   upload.array("images", 5),
   productValidation,
   validate,
@@ -96,13 +100,18 @@ router.post(
 router.put(
   "/:id",
   protect,
-  vendorAuth,
+  adminVendorAuth,
   upload.array("images", 5),
   productValidation,
   validate,
   updateProduct
 );
-router.delete("/:id", protect, vendorAuth, deleteProduct);
-router.get("/vendor/my-products", protect, vendorAuth, getProductsByVendor);
+router.delete("/:id", protect, adminVendorAuth, deleteProduct);
+router.get(
+  "/vendor/my-products",
+  protect,
+  adminVendorAuth,
+  getProductsByVendor
+);
 
 module.exports = router;

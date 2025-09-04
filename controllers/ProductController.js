@@ -199,7 +199,10 @@ const updateProduct = async (req, res, next) => {
     }
 
     // Authorization check
-    if (product.vendor.toString() !== req.user.id) {
+    if (
+      req.user.role === "vendor" &&
+      product.vendor.toString() !== req.user.id
+    ) {
       return res.status(401).json({
         success: false,
         message: "Not authorized to update this product",
@@ -290,7 +293,10 @@ const deleteProduct = async (req, res, next) => {
     }
 
     // Make sure user is product owner
-    if (product.vendor.toString() !== req.user.id) {
+    if (
+      req.user.role === "vendor" &&
+      product.vendor.toString() !== req.user.id
+    ) {
       return res.status(401).json({
         success: false,
         message: "Not authorized to delete this product",
