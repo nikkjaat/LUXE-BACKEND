@@ -15,7 +15,7 @@ const getProducts = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     // Build query
-    let query = { status: "active", isActive: true };
+    let query = { status: "active" };
 
     // Filter by category
     if (req.query.category && req.query.category !== "all") {
@@ -117,54 +117,206 @@ const getProduct = async (req, res, next) => {
 // @desc    Create new product
 // @route   POST /api/products
 // @access  Private (Vendor)
+// const createProduct = async (req, res, next) => {
+//   try {
+//     // Add vendor to req.body
+//     req.body.vendor = req.user._id;
+//     req.body.vendorName = req.user.vendorInfo.shopName;
+
+//     // Parse specifications if it's a string
+//     if (typeof req.body.specifications === "string") {
+//       try {
+//         req.body.specifications = JSON.parse(req.body.specifications);
+//       } catch (err) {
+//         console.error("Error parsing specifications:", err);
+//         // Handle error or set to empty object
+//         req.body.specifications = {};
+//       }
+//     }
+
+//     // Parse tags if it's a string
+//     if (typeof req.body.tags === "string") {
+//       try {
+//         req.body.tags = JSON.parse(req.body.tags);
+//       } catch (err) {
+//         console.error("Error parsing tags:", err);
+//         req.body.tags = [];
+//       }
+//     }
+
+//     // Convert price and originalPrice to numbers
+//     req.body.price = Number(req.body.price);
+//     req.body.originalPrice = Number(req.body.originalPrice);
+//     req.body.stock = Number(req.body.stock);
+
+//     // Handle image uploads
+//     if (req.files && req.files.length > 0) {
+//       const imageUploads = await Promise.all(
+//         req.files.map((file) =>
+//           uploadToCloudinary(file.buffer, "LUXE/products")
+//         )
+//       );
+//       req.body.images = imageUploads.map((upload) => ({
+//         url: upload.secure_url,
+//         publicId: upload.public_id,
+//       }));
+//     }
+
+//     const product = await Product.create(req.body);
+
+//     // Update vendor's product count
+//     req.user.vendorInfo.totalProducts += 1;
+//     await req.user.save();
+
+//     return res.status(201).json({
+//       success: true,
+//       product,
+//     });
+//   } catch (error) {
+//     return res.status(400).json({
+//       success: false,
+//       message: error.message || "Failed to create product",
+//       error: error,
+//     });
+//   }
+// };
 const createProduct = async (req, res, next) => {
   try {
-    // Add vendor to req.body
+    // Set vendor data
     req.body.vendor = req.user._id;
     req.body.vendorName = req.user.vendorInfo.shopName;
 
-    // Parse specifications if it's a string
-    if (typeof req.body.specifications === "string") {
-      try {
-        req.body.specifications = JSON.parse(req.body.specifications);
-      } catch (err) {
-        console.error("Error parsing specifications:", err);
-        // Handle error or set to empty object
-        req.body.specifications = {};
-      }
+    // Parse JSON strings to objects/arrays
+    try {
+      const parseJSONField = (field) => {
+        if (req.body[field] && typeof req.body[field] === "string") {
+          req.body[field] = JSON.parse(req.body[field]);
+        }
+      };
+
+      ["specifications", "tags", "colorVariants"].forEach(parseJSONField);
+    } catch (parseError) {
+      console.error("Error parsing JSON fields:", parseError);
+      return res.status(400).json({
+        success: false,
+        message: "Invalid JSON in specifications, tags, or colorVariants",
+      });
     }
 
-    // Parse tags if it's a string
-    if (typeof req.body.tags === "string") {
-      try {
-        req.body.tags = JSON.parse(req.body.tags);
-      } catch (err) {
-        console.error("Error parsing tags:", err);
-        req.body.tags = [];
-      }
-    }
-
-    // Convert price and originalPrice to numbers
-    req.body.price = Number(req.body.price);
-    req.body.originalPrice = Number(req.body.originalPrice);
-    req.body.stock = Number(req.body.stock);
-
-    // Handle image uploads
+    // Handle file uploads
     if (req.files && req.files.length > 0) {
-      const imageUploads = await Promise.all(
-        req.files.map((file) =>
-          uploadToCloudinary(file.buffer, "LUXE/products")
-        )
-      );
-      req.body.images = imageUploads.map((upload) => ({
-        url: upload.secure_url,
-        publicId: upload.public_id,
-      }));
+      console.log("Processing", req.files.length, "files");
+
+      const uploadFolder = `LUXE/products/${req.user._id}/${Date.now()}`;
+
+      // Ensure colorVariants exists
+      if (!Array.isArray(req.body.colorVariants)) {
+        req.body.colorVariants = [];
+      }
+
+      for (const file of req.files) {
+        if (file.fieldname.startsWith("colorImages_")) {
+          const colorIndex = parseInt(file.fieldname.split("_")[1]) || 0;
+
+          if (!req.body.colorVariants[colorIndex]) {
+            req.body.colorVariants[colorIndex] = {
+              colorName: `Color ${colorIndex + 1}`,
+              colorCode: "#000000",
+              images: [],
+              sizeVariants: [],
+            };
+          }
+
+          if (!req.body.colorVariants[colorIndex].images) {
+            req.body.colorVariants[colorIndex].images = [];
+          }
+
+          try {
+            const uploadResult = await uploadToCloudinary(
+              file.buffer,
+              uploadFolder
+            );
+
+            const imageData = {
+              url: uploadResult.secure_url,
+              publicId: uploadResult.public_id,
+              alt: `${req.body.name || "Product"} - ${
+                req.body.colorVariants[colorIndex].colorName ||
+                `Color ${colorIndex + 1}`
+              }`,
+              isPrimary: req.body.colorVariants[colorIndex].images.length === 0,
+            };
+
+            req.body.colorVariants[colorIndex].images.push(imageData);
+          } catch (uploadError) {
+            console.error("Error uploading image:", uploadError);
+          }
+        }
+      }
     }
 
+    // Parse numeric fields
+    req.body.price = parseFloat(req.body.price) || 0;
+    req.body.originalPrice = parseFloat(req.body.originalPrice) || 0;
+
+    // Ensure colorVariants and sizeVariants are formatted correctly
+    if (Array.isArray(req.body.colorVariants)) {
+      for (let variant of req.body.colorVariants) {
+        variant.colorName = variant.colorName?.trim() || "Unnamed Color";
+        variant.colorCode = variant.colorCode || "#000000";
+
+        // Ensure images array
+        variant.images = variant.images || [];
+
+        // Convert sizeVariants and validate
+        if (!Array.isArray(variant.sizeVariants)) {
+          variant.sizeVariants = [];
+        }
+
+        variant.sizeVariants = variant.sizeVariants.map((sizeVariant) => {
+          return {
+            size: sizeVariant.size?.trim() || undefined,
+            customSize: sizeVariant.customSize?.trim() || undefined,
+            stock: parseInt(sizeVariant.stock) || 0,
+            priceAdjustment: parseFloat(sizeVariant.priceAdjustment) || 0,
+          };
+        });
+
+        // Ensure at least one size variant per schema
+        if (variant.sizeVariants.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Each color variant must have at least one size variant.`,
+          });
+        }
+
+        // Validate that each sizeVariant has size or customSize
+        const allValid = variant.sizeVariants.every(
+          (sv) => sv.size || sv.customSize
+        );
+
+        if (!allValid) {
+          return res.status(400).json({
+            success: false,
+            message: `Each size variant must have a size or customSize.`,
+          });
+        }
+      }
+    }
+
+    // Calculate total product stock from all sizeVariants
+    req.body.stock = req.body.colorVariants.reduce((total, variant) => {
+      const sizeStock = variant.sizeVariants.reduce(
+        (sum, sv) => sum + (parseInt(sv.stock) || 0),
+        0
+      );
+      return total + sizeStock;
+    }, 0);
+
+    // Create product
     const product = await Product.create(req.body);
 
-    // Update vendor's product count
+    // Update vendor's totalProducts count
     req.user.vendorInfo.totalProducts += 1;
     await req.user.save();
 
@@ -173,10 +325,10 @@ const createProduct = async (req, res, next) => {
       product,
     });
   } catch (error) {
+    console.error("Create product error:", error);
     return res.status(400).json({
       success: false,
       message: error.message || "Failed to create product",
-      error: error,
     });
   }
 };

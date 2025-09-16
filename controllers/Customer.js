@@ -22,14 +22,14 @@ exports.getCartItems = async (req, res, next) => {
 exports.addToCart = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    const { id, quantity = 1 } = req.body;
+    const { id, quantity = 1, size, color } = req.body;
 
     const cartItem = user.cart.find((item) => item.productId.equals(id));
 
     if (cartItem) {
       cartItem.quantity += quantity;
     } else {
-      user.cart.push({ productId: id, quantity });
+      user.cart.push({ productId: id, quantity, size, color });
     }
 
     await user.save();
@@ -106,10 +106,11 @@ exports.updateQuantity = async (req, res, next) => {
     // console.log(userId, id, quantity);
     // Find the user and update the quantity of the specified product in the cart
     const user = await User.findOneAndUpdate(
-      { _id: userId, "cart._id": id },
+      { _id: userId, "cart.productId": id },
       { $set: { "cart.$.quantity": quantity } },
       { new: true }
     ).populate("cart.productId");
+
     if (!user) {
       return res.status(404).json({
         message: "User or product not found in cart",
@@ -139,7 +140,7 @@ exports.removeFromCart = async (req, res, next) => {
       userId,
       {
         $pull: {
-          cart: { _id: id },
+          cart: { productId: id },
         },
       },
       { new: true }

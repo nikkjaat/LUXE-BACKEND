@@ -83,8 +83,11 @@ const userSchema = new mongoose.Schema(
         },
         size: {
           type: String,
-          enum: ["S", "M", "L", "XL", "XXL"],
-          default: "M",
+          trim: true,
+        },
+        color: {
+          type: String,
+          trim: true,
         },
         addedAt: { type: Date, default: Date.now },
       },
@@ -150,7 +153,10 @@ const userSchema = new mongoose.Schema(
     ],
     // Vendor specific fields
     vendorInfo: {
-      shopName: String,
+      shopName: {
+        type: String,
+        default: "LUXE Premium Store",
+      },
       businessType: String,
       status: {
         type: String,

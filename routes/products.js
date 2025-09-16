@@ -21,7 +21,7 @@ const {
   adminVendorAuth,
 } = require("../middleware/auth.js");
 const { validate } = require("../middleware/validate.js");
-const { upload } = require("../middleware/upload.js");
+const { uploadMultiple } = require("../middleware/upload.js");
 
 const router = express.Router();
 
@@ -40,9 +40,9 @@ const productValidation = [
     .withMessage("Price must be a positive number"),
   body("category")
     .isIn([
-      "accessories",
       "women",
       "men",
+      "accessories",
       "home",
       "electronics",
       "beauty",
@@ -50,9 +50,6 @@ const productValidation = [
       "kids",
     ])
     .withMessage("Invalid category"),
-  body("stock")
-    .isInt({ min: 0 })
-    .withMessage("Stock must be a non-negative integer"),
 ];
 
 const reviewValidation = [
@@ -92,7 +89,7 @@ router.post(
   "/",
   protect,
   adminVendorAuth,
-  upload.array("images", 5),
+  uploadMultiple,
   productValidation,
   validate,
   createProduct
@@ -101,7 +98,7 @@ router.put(
   "/:id",
   protect,
   adminVendorAuth,
-  upload.array("images", 5),
+  uploadMultiple,
   productValidation,
   validate,
   updateProduct

@@ -1,6 +1,24 @@
 const Product = require("../models/Product");
+const Category = require("../models/Category");
 const User = require("../models/User");
 const mongoose = require("mongoose");
+const {
+  uploadToCloudinary,
+  deleteFromCloudinary,
+} = require("../Utils/cloudinary.js");
+
+exports.getAdminProducts = async (req, res, next) => {
+  try {
+    const products = await Product.find().populate("vendor", "name email");
+    res.status(200).json({
+      success: true,
+      count: products.length,
+      data: products,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 exports.getVendorApplications = async (req, res) => {
   try {
@@ -170,5 +188,188 @@ exports.deleteUser = async (req, res) => {
     await session.abortTransaction();
     session.endSession();
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.addCategory = async (req, res, next) => {
+  try {
+    const { name, description, image, isActive, slug, sortOrder, imageSource } =
+      req.body;
+
+    // Validate required fields
+    if (!name || !slug) {
+      return res.status(400).json({
+        success: false,
+        message: "Name and slug are required",
+      });
+    }
+
+    // Check for duplicates
+    const existingCategory = await Category.findOne({
+      $or: [{ name }, { slug }],
+    });
+
+    if (existingCategory) {
+      return res.status(400).json({
+        success: false,
+        message: "Category with this name or slug already exists",
+      });
+    }
+
+    let imageUrl = "";
+
+    // Handle image upload - store as single string
+    if (imageSource === "file" && req.file) {
+      try {
+        const uploadResult = await uploadToCloudinary(
+          req.file.buffer,
+          "LUXE/category"
+        );
+        imageUrl = uploadResult.secure_url;
+      } catch (uploadError) {
+        console.error("Cloudinary upload error:", uploadError);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to upload image",
+        });
+      }
+    } else if (imageSource === "url" && image) {
+      imageUrl = image;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Image is required",
+      });
+    }
+
+    const newCategory = new Category({
+      name,
+      description,
+      slug,
+      isActive: isActive === "true" || isActive === true,
+      sortOrder: parseInt(sortOrder) || 0,
+      image: imageUrl,
+    });
+
+    await newCategory.save();
+
+    res.status(201).json({
+      success: true,
+      message: "Category added successfully",
+      data: newCategory,
+    });
+  } catch (error) {
+    console.error("Error adding category:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+// Add these missing controller functions
+exports.getCategories = async (req, res) => {
+  try {
+    const categories = await Category.find().sort({ sortOrder: 1 });
+    res.json({
+      success: true,
+      categories,
+    });
+  } catch (error) {
+    console.error("Error fetching categories:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch categories",
+      error: error.message,
+    });
+  }
+};
+
+exports.updateCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, image, isActive, slug, sortOrder, imageSource } =
+      req.body;
+
+    const category = await Category.findById(id);
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: "Category not found",
+      });
+    }
+
+    // Handle image update
+    let imageData = category.image;
+    if (imageSource === "file" && req.file) {
+      const uploadResult = await uploadToCloudinary(
+        req.file.buffer,
+        "LUXE/category"
+      );
+      imageData = {
+        url: uploadResult.secure_url,
+        publicId: uploadResult.public_id,
+      };
+    } else if (imageSource === "url" && image) {
+      imageData = {
+        url: image,
+        publicId: null,
+      };
+    }
+
+    const updatedCategory = await Category.findByIdAndUpdate(
+      id,
+      {
+        name,
+        description,
+        image: imageData,
+        isActive: isActive === "true" || isActive === true,
+        slug,
+        sortOrder: parseInt(sortOrder) || 0,
+      },
+      { new: true }
+    );
+
+    res.json({
+      success: true,
+      message: "Category updated successfully",
+      data: updatedCategory,
+    });
+  } catch (error) {
+    console.error("Error updating category:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update category",
+      error: error.message,
+    });
+  }
+};
+
+exports.deleteCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const category = await Category.findById(id);
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: "Category not found",
+      });
+    }
+
+    await Category.findByIdAndDelete(id);
+
+    res.json({
+      success: true,
+      message: "Category deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting category:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete category",
+      error: error.message,
+    });
   }
 };

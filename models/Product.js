@@ -1,17 +1,81 @@
 const mongoose = require("mongoose");
 
+const sizeVariantSchema = new mongoose.Schema({
+  size: {
+    type: String,
+    trim: true,
+  },
+  customSize: {
+    type: String,
+    trim: true,
+  },
+  stock: {
+    type: Number,
+    required: [true, "Stock quantity is required"],
+    min: [0, "Stock cannot be negative"],
+    default: 0,
+  },
+  priceAdjustment: {
+    type: Number,
+    default: 0,
+  },
+});
+
+const imageSchema = new mongoose.Schema({
+  url: {
+    type: String,
+    required: true,
+  },
+  secure_url: {
+    type: String, // For Cloudinary URLs
+  },
+  alt: {
+    type: String,
+    trim: true,
+  },
+  isPrimary: {
+    type: Boolean,
+    default: false,
+  },
+  order: {
+    type: Number,
+    default: 0,
+  },
+  publicId: String, // For cloudinary or other image storage
+});
+
+const colorVariantSchema = new mongoose.Schema({
+  colorName: {
+    type: String,
+    required: [true, "Color name is required"],
+    trim: true,
+  },
+  colorCode: {
+    type: String,
+    default: "#000000",
+    validate: {
+      validator: function (v) {
+        return /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(v);
+      },
+      message: "Color code must be a valid hex color",
+    },
+  },
+  images: [imageSchema],
+  sizeVariants: [sizeVariantSchema],
+});
+
 const productSchema = new mongoose.Schema(
   {
     name: {
       type: String,
       required: [true, "Product name is required"],
       trim: true,
-      maxlength: [200, "Product name cannot exceed 200 characters"],
+      maxlength: [100, "Product name cannot exceed 100 characters"],
     },
     description: {
       type: String,
       required: [true, "Product description is required"],
-      maxlength: [5000, "Description cannot exceed 5000 characters"],
+      maxlength: [2000, "Description cannot exceed 2000 characters"],
     },
     price: {
       type: Number,
@@ -25,16 +89,7 @@ const productSchema = new mongoose.Schema(
     category: {
       type: String,
       required: [true, "Product category is required"],
-      enum: [
-        "women",
-        "men",
-        "electronics",
-        "beauty",
-        "home",
-        "accessories",
-        "sports",
-        "kids",
-      ],
+      // Removed enum to allow dynamic categories from CategoryContext
     },
     subcategory: {
       type: String,
@@ -43,17 +98,6 @@ const productSchema = new mongoose.Schema(
     brand: {
       type: String,
       trim: true,
-    },
-    stock: {
-      type: Number,
-      required: [true, "Stock quantity is required"],
-      min: [0, "Stock cannot be negative"],
-      default: 0,
-    },
-    status: {
-      type: String,
-      enum: ["active", "inactive", "draft"],
-      default: "active",
     },
     badge: {
       type: String,
@@ -65,95 +109,75 @@ const productSchema = new mongoose.Schema(
         "Trending",
         "Premium",
         "Sale",
-        "Featured",
-        "Eco-Friendly",
-        "Handmade",
+        "Hot Deal",
+        "Staff Pick",
+        "",
+      ],
+      default: "",
+    },
+    status: {
+      type: String,
+      enum: ["active", "inactive"],
+      default: "active",
+    },
+    specifications: {
+      weight: {
+        type: String, // Changed to String to match frontend (allows "1.5 kg")
+        trim: true,
+      },
+      dimensions: {
+        length: {
+          type: String, // Changed to String for flexibility
+          trim: true,
+        },
+        width: {
+          type: String, // Changed to String for flexibility
+          trim: true,
+        },
+        height: {
+          type: String, // Changed to String for flexibility
+          trim: true,
+        },
+      },
+      material: {
+        type: String,
+        trim: true,
+      },
+      warranty: {
+        type: String,
+        trim: true,
+      },
+      features: [
+        {
+          type: String,
+          trim: true,
+        },
       ],
     },
-    images: [
+    tags: [
       {
-        url: {
-          type: String,
-          required: true,
-        },
-        name: String,
-        size: Number,
-        publicId: String,
-        alt: String,
+        type: String,
+        trim: true,
       },
     ],
-
-    // Category-specific specifications stored as flexible object
-    specifications: {
-      // Common fields across categories
-      size: [String], // For clothing, sports, kids
-      color: [String], // All categories
-      material: String, // Fashion, home, accessories, sports, kids
-      dimensions: {
-        length: Number,
-        width: Number,
-        height: Number,
-      },
-      weight: Number,
-
-      // Women's Fashion specific
-      careInstructions: String,
-      fitType: String, // Regular, Slim, Loose, Oversized, Tight
-      occasion: [String], // Casual, Formal, Party, Work, Sports, Beach
-      season: [String], // Spring, Summer, Fall, Winter, All Season
-
-      // Men's Fashion specific
-      collarType: String, // Regular, Button-down, Spread, Cutaway, Band
-
-      // Electronics specific
-      warranty: String, // 6 months, 1 year, 2 years, etc.
-      connectivity: [String], // WiFi, Bluetooth, USB-C, etc.
-      powerSource: String, // Battery, AC Adapter, USB, Solar, Rechargeable
-      compatibility: String,
-      batteryLife: String,
-
-      // Beauty specific
-      skinType: [String], // All Skin Types, Dry, Oily, Combination, etc.
-      ingredients: String,
-      volume: String, // 50ml, 100g
-      shelfLife: String, // 6 months, 12 months, etc.
-      application: String,
-      benefits: [String], // Anti-aging, Moisturizing, Brightening, etc.
-      crueltyFree: Boolean,
-      vegan: Boolean,
-
-      // Home & Living specific
-      roomType: [String], // Living Room, Bedroom, Kitchen, etc.
-      style: String, // Modern, Traditional, Contemporary, etc.
-      assembly: Boolean,
-
-      // Accessories specific
-      closure: String, // Zipper, Magnetic, Buckle, etc.
-      waterResistant: Boolean,
-      giftWrapping: Boolean,
-
-      // Sports & Fitness specific
-      sportCategory: [String], // Running, Gym, Yoga, etc.
-      features: [String], // Moisture Wicking, Breathable, etc.
-      skillLevel: String, // Beginner, Intermediate, Advanced, etc.
-      indoor: Boolean,
-      outdoor: Boolean,
-
-      // Kids & Baby specific
-      ageGroup: String, // 0-6 months, 6-12 months, etc.
-      safetyStandards: [String], // CE Certified, CPSIA Compliant, etc.
-      washable: Boolean,
-      chokeHazard: Boolean,
-      educational: String,
+    colorVariants: {
+      type: [colorVariantSchema],
+      required: true,
+      validate: [
+        {
+          validator: function (v) {
+            return v && v.length > 0;
+          },
+          message: "At least one color variant is required",
+        },
+      ],
     },
 
-    // Tags for search and categorization
-    tags: [String],
-
-    // SEO fields
-    seoTitle: String,
-    seoDescription: String,
-    seoKeywords: String,
+    // Calculated field - total stock from all size variants
+    stock: {
+      type: Number,
+      default: 0,
+    },
 
     // Vendor information
     vendor: {
@@ -167,7 +191,7 @@ const productSchema = new mongoose.Schema(
     },
 
     // Auto-generated fields
-    sku: {
+    slug: {
       type: String,
       unique: true,
       sparse: true,
@@ -200,10 +224,6 @@ const productSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
   },
   {
     timestamps: true,
@@ -213,30 +233,69 @@ const productSchema = new mongoose.Schema(
 // Indexes for better query performance
 productSchema.index({ name: "text", description: "text", tags: "text" });
 productSchema.index({ category: 1 });
+productSchema.index({ subcategory: 1 });
 productSchema.index({ vendor: 1 });
 productSchema.index({ status: 1 });
 productSchema.index({ price: 1 });
+productSchema.index({ stock: 1 });
 productSchema.index({ "rating.average": -1 });
 productSchema.index({ createdAt: -1 });
 productSchema.index({ badge: 1 });
-productSchema.index({ "specifications.size": 1 });
-productSchema.index({ "specifications.color": 1 });
+productSchema.index({ "colorVariants.colorName": 1 });
+productSchema.index({ "colorVariants.sizeVariants.size": 1 });
 
-// Generate SKU before saving
-productSchema.pre("save", function (next) {
-  if (!this.sku) {
-    this.sku = `LUX-${this.category.toUpperCase()}-${Date.now()}`;
+// Validation to ensure at least one size variant per color
+colorVariantSchema.pre("validate", function (next) {
+  if (!this.sizeVariants || this.sizeVariants.length === 0) {
+    return next(new Error("At least one size variant is required per color"));
   }
+  next();
+});
+
+// Validation to ensure size or customSize is provided
+sizeVariantSchema.pre("validate", function (next) {
+  if (!this.size && !this.customSize) {
+    return next(new Error("Either size or customSize must be provided"));
+  }
+  next();
+});
+
+// Generate slug before saving
+productSchema.pre("save", function (next) {
+  if (this.isModified("name") || !this.slug) {
+    this.slug = this.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "");
+  }
+
+  // Calculate total stock from all color and size variants
+  if (this.colorVariants && this.colorVariants.length > 0) {
+    this.stock = this.colorVariants.reduce((totalStock, colorVariant) => {
+      const colorStock = colorVariant.sizeVariants.reduce(
+        (sizeSum, sizeVariant) => {
+          return sizeSum + (sizeVariant.stock || 0);
+        },
+        0
+      );
+      return totalStock + colorStock;
+    }, 0);
+  }
+
   next();
 });
 
 // Update vendor name when vendor changes
 productSchema.pre("save", async function (next) {
   if (this.isModified("vendor")) {
-    const User = mongoose.model("User");
-    const vendor = await User.findById(this.vendor);
-    if (vendor && vendor.vendorInfo) {
-      this.vendorName = vendor.vendorInfo.shopName;
+    try {
+      const User = mongoose.model("User");
+      const vendor = await User.findById(this.vendor);
+      if (vendor && vendor.vendorInfo) {
+        this.vendorName = vendor.vendorInfo.shopName;
+      }
+    } catch (error) {
+      console.error("Error updating vendor name:", error);
     }
   }
   next();
@@ -256,6 +315,126 @@ productSchema.virtual("discountPercentage").get(function () {
 productSchema.virtual("isAvailable").get(function () {
   return this.status === "active" && this.stock > 0;
 });
+
+// Method to get primary image for a specific color variant
+productSchema.methods.getPrimaryImageForColor = function (colorIndex = 0) {
+  if (!this.colorVariants || !this.colorVariants[colorIndex]) {
+    return null;
+  }
+
+  const variant = this.colorVariants[colorIndex];
+  const primaryImage = variant.images.find((img) => img.isPrimary);
+
+  if (primaryImage) {
+    return primaryImage;
+  }
+
+  // Fallback to first image if no primary is set
+  if (variant.images.length > 0) {
+    return variant.images[0];
+  }
+
+  return null;
+};
+
+// Method to get all primary images (one per color variant)
+productSchema.methods.getAllPrimaryImages = function () {
+  return this.colorVariants
+    .map((variant) => {
+      const primaryImage = variant.images.find((img) => img.isPrimary);
+      return (
+        primaryImage || (variant.images.length > 0 ? variant.images[0] : null)
+      );
+    })
+    .filter(Boolean);
+};
+
+// Method to get first available primary image
+productSchema.methods.getPrimaryImage = function () {
+  return this.getPrimaryImageForColor(0);
+};
+
+// Method to get available sizes for a specific color
+productSchema.methods.getAvailableSizesForColor = function (colorIndex = 0) {
+  if (!this.colorVariants || !this.colorVariants[colorIndex]) {
+    return [];
+  }
+
+  return this.colorVariants[colorIndex].sizeVariants
+    .filter((sizeVariant) => sizeVariant.stock > 0)
+    .map((sizeVariant) => ({
+      size: sizeVariant.size || sizeVariant.customSize,
+      stock: sizeVariant.stock,
+      priceAdjustment: sizeVariant.priceAdjustment,
+    }));
+};
+
+// Method to get all available colors
+productSchema.methods.getAvailableColors = function () {
+  return this.colorVariants
+    .filter((colorVariant) => {
+      // Check if any size variant has stock
+      return colorVariant.sizeVariants.some(
+        (sizeVariant) => sizeVariant.stock > 0
+      );
+    })
+    .map((colorVariant, index) => ({
+      index,
+      colorName: colorVariant.colorName,
+      colorCode: colorVariant.colorCode,
+      totalStock: colorVariant.sizeVariants.reduce(
+        (sum, sizeVariant) => sum + sizeVariant.stock,
+        0
+      ),
+      primaryImage:
+        colorVariant.images.find((img) => img.isPrimary) ||
+        colorVariant.images[0] ||
+        null,
+    }));
+};
+
+// Method to calculate final price for a specific size variant
+productSchema.methods.getFinalPrice = function (colorIndex = 0, sizeIndex = 0) {
+  if (
+    !this.colorVariants ||
+    !this.colorVariants[colorIndex] ||
+    !this.colorVariants[colorIndex].sizeVariants ||
+    !this.colorVariants[colorIndex].sizeVariants[sizeIndex]
+  ) {
+    return this.price;
+  }
+
+  const sizeVariant = this.colorVariants[colorIndex].sizeVariants[sizeIndex];
+  return this.price + (sizeVariant.priceAdjustment || 0);
+};
+
+// Method to get total variants count
+productSchema.methods.getTotalVariants = function () {
+  return this.colorVariants.reduce((total, colorVariant) => {
+    return total + colorVariant.sizeVariants.length;
+  }, 0);
+};
+
+// Method to get color variant by name
+productSchema.methods.getColorVariantByName = function (colorName) {
+  return this.colorVariants.find(
+    (variant) => variant.colorName.toLowerCase() === colorName.toLowerCase()
+  );
+};
+
+// Method to check if a specific variant is in stock
+productSchema.methods.isVariantInStock = function (colorIndex, sizeIndex) {
+  if (
+    !this.colorVariants ||
+    !this.colorVariants[colorIndex] ||
+    !this.colorVariants[colorIndex].sizeVariants ||
+    !this.colorVariants[colorIndex].sizeVariants[sizeIndex]
+  ) {
+    return false;
+  }
+
+  return this.colorVariants[colorIndex].sizeVariants[sizeIndex].stock > 0;
+};
 
 // Ensure virtual fields are serialized
 productSchema.set("toJSON", { virtuals: true });
