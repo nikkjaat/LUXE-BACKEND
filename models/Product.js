@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 
+// Size variant schema
 const sizeVariantSchema = new mongoose.Schema({
   size: {
     type: String,
@@ -21,13 +22,14 @@ const sizeVariantSchema = new mongoose.Schema({
   },
 });
 
+// Image schema
 const imageSchema = new mongoose.Schema({
   url: {
     type: String,
     required: true,
   },
   secure_url: {
-    type: String, // For Cloudinary URLs
+    type: String,
   },
   alt: {
     type: String,
@@ -41,9 +43,10 @@ const imageSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
-  publicId: String, // For cloudinary or other image storage
+  publicId: String,
 });
 
+// Color variant schema
 const colorVariantSchema = new mongoose.Schema({
   colorName: {
     type: String,
@@ -64,8 +67,67 @@ const colorVariantSchema = new mongoose.Schema({
   sizeVariants: [sizeVariantSchema],
 });
 
+// Category-specific fields schema (replaces specifications)
+const categoryFieldsSchema = new mongoose.Schema(
+  {
+    // Electronics
+    model: String,
+    screenSize: String,
+    resolution: String,
+    ram: String,
+    storage: String,
+    processor: String,
+    battery: String,
+
+    // Clothing (Men & Women)
+    fabric: String,
+    fit: String,
+    sleeveType: String,
+    neckType: String,
+    occasion: String,
+    pattern: String,
+
+    // Books
+    author: String,
+    publisher: String,
+    isbn: String,
+    language: String,
+    pages: Number,
+    genre: String,
+
+    // Furniture
+    material: String,
+    dimensions: String,
+    roomType: String,
+    assembly: String,
+    weightCapacity: String,
+
+    // Grocery
+    expiryDate: Date,
+    weight: String,
+    ingredients: String,
+    nutritionFacts: String,
+
+    // Toys
+    ageRange: String,
+    batteryRequired: Boolean,
+    safetyInfo: String,
+
+    // Sports
+    sportType: String,
+
+    // Beauty
+    skinType: String,
+    volume: String,
+    benefits: String,
+  },
+  { _id: false }
+);
+
+// Main product schema
 const productSchema = new mongoose.Schema(
   {
+    // Basic Information
     name: {
       type: String,
       required: [true, "Product name is required"],
@@ -77,6 +139,38 @@ const productSchema = new mongoose.Schema(
       required: [true, "Product description is required"],
       maxlength: [2000, "Description cannot exceed 2000 characters"],
     },
+
+    // Category Information
+    category: {
+      main: {
+        type: String,
+        required: [true, "Main category is required"],
+        enum: [
+          "electronics",
+          "men",
+          "women",
+          "grocery",
+          "furniture",
+          "books",
+          "toys",
+          "sports",
+          "beauty",
+          "other",
+        ],
+      },
+      sub: {
+        type: String,
+        required: [true, "Subcategory is required"],
+        trim: true,
+      },
+    },
+    brand: {
+      type: String,
+      trim: true,
+      required: [true, "Brand is required"],
+    },
+
+    // Pricing
     price: {
       type: Number,
       required: [true, "Product price is required"],
@@ -86,19 +180,8 @@ const productSchema = new mongoose.Schema(
       type: Number,
       min: [0, "Original price cannot be negative"],
     },
-    category: {
-      type: String,
-      required: [true, "Product category is required"],
-      // Removed enum to allow dynamic categories from CategoryContext
-    },
-    subcategory: {
-      type: String,
-      trim: true,
-    },
-    brand: {
-      type: String,
-      trim: true,
-    },
+
+    // Product Status & Badges
     badge: {
       type: String,
       enum: [
@@ -117,26 +200,23 @@ const productSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["active", "inactive"],
-      default: "active",
+      enum: ["draft", "active", "inactive", "discontinued"],
+      default: "draft",
     },
-    specifications: {
+
+    // Category-specific fields (replaces specifications)
+    categoryFields: {
+      type: categoryFieldsSchema,
+      default: () => ({}),
+    },
+
+    // Common specifications across all categories
+    commonSpecs: {
       weight: {
-        type: String, // Changed to String to match frontend (allows "1.5 kg")
-        trim: true,
-      },
-      dimensions: {
-        length: {
-          type: String, // Changed to String for flexibility
-          trim: true,
-        },
-        width: {
-          type: String, // Changed to String for flexibility
-          trim: true,
-        },
-        height: {
-          type: String, // Changed to String for flexibility
-          trim: true,
+        value: Number,
+        unit: {
+          type: String,
+          enum: ["kg", "g", "lb", "oz"],
         },
       },
       material: {
@@ -154,29 +234,31 @@ const productSchema = new mongoose.Schema(
         },
       ],
     },
+
+    // Variants
+    colorVariants: [colorVariantSchema],
+    hasVariants: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Stock information
+    stock: {
+      type: Number,
+      default: 0,
+    },
+
+    // Tags
     tags: [
       {
         type: String,
         trim: true,
       },
     ],
-    colorVariants: {
-      type: [colorVariantSchema],
-      required: true,
-      validate: [
-        {
-          validator: function (v) {
-            return v && v.length > 0;
-          },
-          message: "At least one color variant is required",
-        },
-      ],
-    },
-
-    // Calculated field - total stock from all size variants
-    stock: {
-      type: Number,
-      default: 0,
+    slug: {
+      type: String,
+      unique: true,
+      sparse: true,
     },
 
     // Vendor information
@@ -188,13 +270,6 @@ const productSchema = new mongoose.Schema(
     vendorName: {
       type: String,
       required: true,
-    },
-
-    // Auto-generated fields
-    slug: {
-      type: String,
-      unique: true,
-      sparse: true,
     },
 
     // Performance metrics
@@ -232,8 +307,8 @@ const productSchema = new mongoose.Schema(
 
 // Indexes for better query performance
 productSchema.index({ name: "text", description: "text", tags: "text" });
-productSchema.index({ category: 1 });
-productSchema.index({ subcategory: 1 });
+productSchema.index({ "category.main": 1, "category.sub": 1 });
+productSchema.index({ brand: 1 });
 productSchema.index({ vendor: 1 });
 productSchema.index({ status: 1 });
 productSchema.index({ price: 1 });
@@ -246,7 +321,7 @@ productSchema.index({ "colorVariants.sizeVariants.size": 1 });
 
 // Validation to ensure at least one size variant per color
 colorVariantSchema.pre("validate", function (next) {
-  if (!this.sizeVariants || this.sizeVariants.length === 0) {
+  if (this.sizeVariants && this.sizeVariants.length === 0) {
     return next(new Error("At least one size variant is required per color"));
   }
   next();
@@ -280,6 +355,13 @@ productSchema.pre("save", function (next) {
       );
       return totalStock + colorStock;
     }, 0);
+
+    this.hasVariants = true;
+  }
+
+  // Set originalPrice if not set
+  if (!this.originalPrice) {
+    this.originalPrice = this.price;
   }
 
   next();
@@ -339,14 +421,18 @@ productSchema.methods.getPrimaryImageForColor = function (colorIndex = 0) {
 
 // Method to get all primary images (one per color variant)
 productSchema.methods.getAllPrimaryImages = function () {
-  return this.colorVariants
-    .map((variant) => {
-      const primaryImage = variant.images.find((img) => img.isPrimary);
-      return (
-        primaryImage || (variant.images.length > 0 ? variant.images[0] : null)
-      );
-    })
-    .filter(Boolean);
+  if (this.colorVariants && this.colorVariants.length > 0) {
+    return this.colorVariants
+      .map((variant) => {
+        const primaryImage = variant.images.find((img) => img.isPrimary);
+        return (
+          primaryImage || (variant.images.length > 0 ? variant.images[0] : null)
+        );
+      })
+      .filter(Boolean);
+  }
+
+  return [];
 };
 
 // Method to get first available primary image
@@ -371,6 +457,10 @@ productSchema.methods.getAvailableSizesForColor = function (colorIndex = 0) {
 
 // Method to get all available colors
 productSchema.methods.getAvailableColors = function () {
+  if (!this.colorVariants || this.colorVariants.length === 0) {
+    return [];
+  }
+
   return this.colorVariants
     .filter((colorVariant) => {
       // Check if any size variant has stock
@@ -410,6 +500,10 @@ productSchema.methods.getFinalPrice = function (colorIndex = 0, sizeIndex = 0) {
 
 // Method to get total variants count
 productSchema.methods.getTotalVariants = function () {
+  if (!this.colorVariants || this.colorVariants.length === 0) {
+    return 1; // The product itself is a variant
+  }
+
   return this.colorVariants.reduce((total, colorVariant) => {
     return total + colorVariant.sizeVariants.length;
   }, 0);
@@ -417,6 +511,10 @@ productSchema.methods.getTotalVariants = function () {
 
 // Method to get color variant by name
 productSchema.methods.getColorVariantByName = function (colorName) {
+  if (!this.colorVariants || this.colorVariants.length === 0) {
+    return null;
+  }
+
   return this.colorVariants.find(
     (variant) => variant.colorName.toLowerCase() === colorName.toLowerCase()
   );
@@ -430,10 +528,43 @@ productSchema.methods.isVariantInStock = function (colorIndex, sizeIndex) {
     !this.colorVariants[colorIndex].sizeVariants ||
     !this.colorVariants[colorIndex].sizeVariants[sizeIndex]
   ) {
-    return false;
+    return this.stock > 0; // Return product stock status if no variants
   }
 
   return this.colorVariants[colorIndex].sizeVariants[sizeIndex].stock > 0;
+};
+
+// Static method to get products by category
+productSchema.statics.findByCategory = function (
+  mainCategory,
+  subCategory = null,
+  options = {}
+) {
+  const query = {
+    "category.main": mainCategory,
+    status: "active",
+    ...options,
+  };
+
+  if (subCategory) {
+    query["category.sub"] = subCategory;
+  }
+
+  return this.find(query);
+};
+
+// Static method to get low stock products
+productSchema.statics.findLowStock = function (vendorId = null) {
+  const query = {
+    status: "active",
+    $expr: { $lte: ["$stock", "$lowStockThreshold"] },
+  };
+
+  if (vendorId) {
+    query.vendor = vendorId;
+  }
+
+  return this.find(query);
 };
 
 // Ensure virtual fields are serialized

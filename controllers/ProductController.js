@@ -182,11 +182,12 @@ const getProduct = async (req, res, next) => {
 // };
 const createProduct = async (req, res, next) => {
   try {
-    // Set vendor data
+    // Attach vendor data
     req.body.vendor = req.user._id;
     req.body.vendorName = req.user.vendorInfo.shopName;
 
-    // Parse JSON strings to objects/arrays
+    // Parse JSON fields coming as strings
+    // Parse JSON fields coming as strings
     try {
       const parseJSONField = (field) => {
         if (req.body[field] && typeof req.body[field] === "string") {
@@ -194,12 +195,19 @@ const createProduct = async (req, res, next) => {
         }
       };
 
-      ["specifications", "tags", "colorVariants"].forEach(parseJSONField);
+      [
+        "tags",
+        "colorVariants",
+        "categoryFields",
+        "commonSpecs",
+        "category", // ✅ FIX added here
+      ].forEach(parseJSONField);
     } catch (parseError) {
       console.error("Error parsing JSON fields:", parseError);
       return res.status(400).json({
         success: false,
-        message: "Invalid JSON in specifications, tags, or colorVariants",
+        message:
+          "Invalid JSON in tags, colorVariants, categoryFields, commonSpecs, or category",
       });
     }
 
@@ -209,7 +217,6 @@ const createProduct = async (req, res, next) => {
 
       const uploadFolder = `LUXE/products/${req.user._id}/${Date.now()}`;
 
-      // Ensure colorVariants exists
       if (!Array.isArray(req.body.colorVariants)) {
         req.body.colorVariants = [];
       }
@@ -239,6 +246,7 @@ const createProduct = async (req, res, next) => {
 
             const imageData = {
               url: uploadResult.secure_url,
+              secure_url: uploadResult.secure_url, // schema has both
               publicId: uploadResult.public_id,
               alt: `${req.body.name || "Product"} - ${
                 req.body.colorVariants[colorIndex].colorName ||
@@ -255,34 +263,29 @@ const createProduct = async (req, res, next) => {
       }
     }
 
-    // Parse numeric fields
+    // Numeric fields
     req.body.price = parseFloat(req.body.price) || 0;
     req.body.originalPrice = parseFloat(req.body.originalPrice) || 0;
 
-    // Ensure colorVariants and sizeVariants are formatted correctly
+    // Validate and format color variants
     if (Array.isArray(req.body.colorVariants)) {
       for (let variant of req.body.colorVariants) {
         variant.colorName = variant.colorName?.trim() || "Unnamed Color";
         variant.colorCode = variant.colorCode || "#000000";
 
-        // Ensure images array
         variant.images = variant.images || [];
 
-        // Convert sizeVariants and validate
         if (!Array.isArray(variant.sizeVariants)) {
           variant.sizeVariants = [];
         }
 
-        variant.sizeVariants = variant.sizeVariants.map((sizeVariant) => {
-          return {
-            size: sizeVariant.size?.trim() || undefined,
-            customSize: sizeVariant.customSize?.trim() || undefined,
-            stock: parseInt(sizeVariant.stock) || 0,
-            priceAdjustment: parseFloat(sizeVariant.priceAdjustment) || 0,
-          };
-        });
+        variant.sizeVariants = variant.sizeVariants.map((sizeVariant) => ({
+          size: sizeVariant.size?.trim() || undefined,
+          customSize: sizeVariant.customSize?.trim() || undefined,
+          stock: parseInt(sizeVariant.stock) || 0,
+          priceAdjustment: parseFloat(sizeVariant.priceAdjustment) || 0,
+        }));
 
-        // Ensure at least one size variant per schema
         if (variant.sizeVariants.length === 0) {
           return res.status(400).json({
             success: false,
@@ -290,7 +293,6 @@ const createProduct = async (req, res, next) => {
           });
         }
 
-        // Validate that each sizeVariant has size or customSize
         const allValid = variant.sizeVariants.every(
           (sv) => sv.size || sv.customSize
         );
@@ -304,7 +306,7 @@ const createProduct = async (req, res, next) => {
       }
     }
 
-    // Calculate total product stock from all sizeVariants
+    // Total stock from variants
     req.body.stock = req.body.colorVariants.reduce((total, variant) => {
       const sizeStock = variant.sizeVariants.reduce(
         (sum, sv) => sum + (parseInt(sv.stock) || 0),
@@ -316,7 +318,7 @@ const createProduct = async (req, res, next) => {
     // Create product
     const product = await Product.create(req.body);
 
-    // Update vendor's totalProducts count
+    // Update vendor's totalProducts
     req.user.vendorInfo.totalProducts += 1;
     await req.user.save();
 
@@ -337,9 +339,9 @@ const createProduct = async (req, res, next) => {
 // @route   PUT /api/products/:id
 // @access  Private (Vendor - own products only)
 const updateProduct = async (req, res, next) => {
+  console.log(req.body);
   try {
     const productId = req.params.id;
-    const formData = req.body;
 
     let product = await Product.findById(productId);
 
@@ -361,65 +363,149 @@ const updateProduct = async (req, res, next) => {
       });
     }
 
-    // Parse the JSON strings
-    const specifications = JSON.parse(formData.specifications || "{}");
-    const tags = JSON.parse(formData.tags || "[]");
-    const keptImages = JSON.parse(formData.keptImages || "[]");
-    const deletedImages = JSON.parse(formData.deletedImages || "[]");
+    // Parse the JSON strings from form data
+    const colorVariantsData = JSON.parse(req.body.colorVariants || "[]");
+    const categoryFields = JSON.parse(req.body.categoryFields || "{}");
+    const commonSpecs = JSON.parse(req.body.commonSpecs || "{}");
+    const tags = JSON.parse(req.body.tags || "[]");
 
-    // Handle image deletions
-    if (deletedImages.length > 0) {
-      await Promise.all(
-        deletedImages.map((image) =>
-          image.publicId
-            ? deleteFromCloudinary(image.publicId)
-            : Promise.resolve()
-        )
-      );
-    }
+    // Handle image processing for each color variant
+    const updatedColorVariants = await Promise.all(
+      colorVariantsData.map(async (variant, colorIndex) => {
+        let variantImages = [];
 
-    // Handle new image uploads
-    let newImages = [];
-    if (req.files && req.files.length > 0) {
-      newImages = await Promise.all(
-        req.files.map((file) => uploadToCloudinary(file.buffer, "products"))
+        // Process kept images for this color variant
+        if (variant.keptImages) {
+          const keptImages = JSON.parse(variant.keptImages);
+          variantImages.push(
+            ...keptImages.map((img) => ({
+              url: img.url,
+              secure_url: img.secure_url,
+              alt: img.alt,
+              isPrimary: img.isPrimary,
+              order: img.order,
+              publicId: img.publicId,
+            }))
+          );
+        } else {
+          // ✅ fallback: use existing product images
+          variantImages = product.colorVariants[colorIndex]?.images || [];
+        }
+
+        // Process new image uploads for this color variant
+        const colorVariantFiles = req.files
+          ? req.files.filter(
+              (file) => file.fieldname === `colorImages_${colorIndex}`
+            )
+          : [];
+
+        if (colorVariantFiles.length > 0) {
+          const newImages = await Promise.all(
+            colorVariantFiles.map((file) =>
+              uploadToCloudinary(file.buffer, "products")
+            )
+          );
+
+          // Process image metadata for new images
+          const imageMetadataFields = Object.keys(req.body).filter((key) =>
+            key.startsWith(`imageMetadata_${colorIndex}_`)
+          );
+
+          newImages.forEach((upload, imageIndex) => {
+            const metadataField = `imageMetadata_${colorIndex}_${imageIndex}`;
+            const metadata = req.body[metadataField]
+              ? JSON.parse(req.body[metadataField])
+              : {};
+
+            variantImages.push({
+              url: upload.secure_url,
+              secure_url: upload.secure_url,
+              alt:
+                metadata.alt ||
+                `${req.body.name} - ${variant.colorName} - Image ${
+                  variantImages.length + 1
+                }`,
+              isPrimary: metadata.isPrimary || false,
+              order: metadata.order || variantImages.length,
+              publicId: upload.public_id,
+            });
+          });
+        }
+
+        // Process deleted images for this color variant
+        if (variant.deletedImages) {
+          const deletedImages = JSON.parse(variant.deletedImages);
+          await Promise.all(
+            deletedImages.map((image) =>
+              image.publicId
+                ? deleteFromCloudinary(image.publicId)
+                : Promise.resolve()
+            )
+          );
+        }
+
+        // Ensure at least one primary image
+        if (
+          variantImages.length > 0 &&
+          !variantImages.some((img) => img.isPrimary)
+        ) {
+          variantImages[0].isPrimary = true;
+        }
+
+        return {
+          colorName: variant.colorName,
+          colorCode: variant.colorCode,
+          images: variantImages,
+          sizeVariants: variant.sizeVariants.map((sizeVariant) => ({
+            size: sizeVariant.size,
+            customSize: sizeVariant.customSize,
+            stock: parseInt(sizeVariant.stock || 0),
+            priceAdjustment: parseFloat(sizeVariant.priceAdjustment || 0),
+          })),
+        };
+      })
+    );
+
+    // Calculate total stock from all variants
+    const totalStock = updatedColorVariants.reduce((sum, variant) => {
+      const variantStock = variant.sizeVariants.reduce(
+        (sizeSum, sizeVariant) => sizeSum + (sizeVariant.stock || 0),
+        0
       );
-    }
+      return sum + variantStock;
+    }, 0);
 
     // Prepare update data
     const updateData = {
-      name: formData.name,
-      description: formData.description,
-      price: Number(formData.price),
-      category: formData.category,
-      stock: Number(formData.stock),
-      subcategory: formData.subcategory,
-      originalPrice: Number(formData.originalPrice || 0),
-      brand: formData.brand || "",
-      badge: formData.badge || "",
-      status: formData.status || "active",
-      specifications,
+      name: req.body.name,
+      description: req.body.description,
+      price: Number(req.body.price),
+      category: JSON.parse(req.body.category || "{}"),
+      originalPrice: Number(req.body.originalPrice || 0),
+      brand: req.body.brand || "",
+      badge: req.body.badge || "",
+      status: req.body.status || "active",
+      categoryFields,
+      commonSpecs: {
+        weight: commonSpecs.weight || { value: "", unit: "kg" },
+        material: commonSpecs.material || "",
+        warranty: commonSpecs.warranty || "",
+        features: commonSpecs.features || [],
+      },
       tags,
-      // Combine kept images and new images
-      images: [
-        ...keptImages.map((img) => ({
-          url: img.url,
-          publicId: img.publicId,
-        })),
-        ...newImages.map((upload) => ({
-          url: upload.secure_url,
-          publicId: upload.public_id,
-        })),
-      ],
+      colorVariants: updatedColorVariants,
+      stock: totalStock,
+      hasVariants: updatedColorVariants.length > 0,
     };
 
     const updatedProduct = await Product.findByIdAndUpdate(
       productId,
       updateData,
       {
+        new: true,
         runValidators: true,
       }
-    );
+    ).populate("vendor", "name email vendorInfo");
 
     res.status(200).json({
       success: true,
