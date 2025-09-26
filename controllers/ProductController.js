@@ -339,10 +339,8 @@ const createProduct = async (req, res, next) => {
 // @route   PUT /api/products/:id
 // @access  Private (Vendor - own products only)
 const updateProduct = async (req, res, next) => {
-  console.log(req.body);
   try {
     const productId = req.params.id;
-
     let product = await Product.findById(productId);
 
     if (!product) {
@@ -369,33 +367,67 @@ const updateProduct = async (req, res, next) => {
     const commonSpecs = JSON.parse(req.body.commonSpecs || "{}");
     const tags = JSON.parse(req.body.tags || "[]");
 
+    // Parse kept and deleted images from form data
+    const keptImages = req.body.keptImages
+      ? JSON.parse(req.body.keptImages)
+      : [];
+    const deletedImages = req.body.deletedImages
+      ? JSON.parse(req.body.deletedImages)
+      : [];
+
+    // console.log("Kept Images:", keptImages);
+    // console.log("Deleted Images:", deletedImages);
+
+    // Handle deleted images first
+    if (deletedImages.length > 0) {
+      await Promise.all(
+        deletedImages.map((image) =>
+          image.publicId
+            ? deleteFromCloudinary(image.publicId)
+            : Promise.resolve()
+        )
+      );
+    }
+
+    // Handle image processing for each color variant
     // Handle image processing for each color variant
     const updatedColorVariants = await Promise.all(
       colorVariantsData.map(async (variant, colorIndex) => {
         let variantImages = [];
 
-        // Process kept images for this color variant
-        if (variant.keptImages) {
-          const keptImages = JSON.parse(variant.keptImages);
+        // Filter kept images for this specific color variant
+        const variantKeptImages = keptImages.filter(
+          (img) => img.colorIndex === colorIndex
+        );
+
+        // Add kept images with their original primary status
+        if (variantKeptImages.length > 0) {
           variantImages.push(
-            ...keptImages.map((img) => ({
-              url: img.url,
-              secure_url: img.secure_url,
+            ...variantKeptImages.map((img) => ({
+              url: img.url || img.secure_url,
+              secure_url: img.secure_url || img.url,
               alt: img.alt,
-              isPrimary: img.isPrimary,
-              order: img.order,
+              isPrimary: img.isPrimary || false, // Preserve the primary status from frontend
+              order: img.order || 0,
               publicId: img.publicId,
             }))
           );
         } else {
-          // ✅ fallback: use existing product images
-          variantImages = product.colorVariants[colorIndex]?.images || [];
+          // Fallback: if no kept images specified, keep existing images for this variant
+          const existingVariantImages =
+            product.colorVariants[colorIndex]?.images || [];
+          variantImages = existingVariantImages.filter(
+            (existingImg) =>
+              !deletedImages.some(
+                (deletedImg) => deletedImg.publicId === existingImg.publicId
+              )
+          );
         }
 
         // Process new image uploads for this color variant
         const colorVariantFiles = req.files
-          ? req.files.filter(
-              (file) => file.fieldname === `colorImages_${colorIndex}`
+          ? req.files.filter((file) =>
+              file.fieldname.startsWith(`colorImages_${colorIndex}`)
             )
           : [];
 
@@ -406,11 +438,10 @@ const updateProduct = async (req, res, next) => {
             )
           );
 
-          // Process image metadata for new images
-          const imageMetadataFields = Object.keys(req.body).filter((key) =>
-            key.startsWith(`imageMetadata_${colorIndex}_`)
-          );
+          // Check if any existing image is already primary
+          const hasExistingPrimary = variantImages.some((img) => img.isPrimary);
 
+          // Process image metadata for new images
           newImages.forEach((upload, imageIndex) => {
             const metadataField = `imageMetadata_${colorIndex}_${imageIndex}`;
             const metadata = req.body[metadataField]
@@ -425,40 +456,51 @@ const updateProduct = async (req, res, next) => {
                 `${req.body.name} - ${variant.colorName} - Image ${
                   variantImages.length + 1
                 }`,
-              isPrimary: metadata.isPrimary || false,
+              isPrimary:
+                metadata.isPrimary || (!hasExistingPrimary && imageIndex === 0),
               order: metadata.order || variantImages.length,
               publicId: upload.public_id,
             });
           });
         }
 
-        // Process deleted images for this color variant
-        if (variant.deletedImages) {
-          const deletedImages = JSON.parse(variant.deletedImages);
-          await Promise.all(
-            deletedImages.map((image) =>
-              image.publicId
-                ? deleteFromCloudinary(image.publicId)
-                : Promise.resolve()
-            )
-          );
-        }
+        // Ensure proper ordering
+        variantImages = variantImages.map((img, index) => ({
+          ...img,
+          order: index,
+        }));
 
-        // Ensure at least one primary image
-        if (
-          variantImages.length > 0 &&
-          !variantImages.some((img) => img.isPrimary)
-        ) {
+        // Ensure only one primary image exists
+        const primaryImages = variantImages.filter((img) => img.isPrimary);
+        if (primaryImages.length > 1) {
+          // If multiple primary images, keep only the first one as primary
+          let foundPrimary = false;
+          variantImages = variantImages.map((img) => ({
+            ...img,
+            isPrimary:
+              !foundPrimary && img.isPrimary ? (foundPrimary = true) : false,
+          }));
+        } else if (variantImages.length > 0 && primaryImages.length === 0) {
+          // If no primary image, set the first one as primary
           variantImages[0].isPrimary = true;
         }
 
+        // console.log(
+        //   `Final images for color ${colorIndex}:`,
+        //   variantImages.map((img) => ({
+        //     alt: img.alt,
+        //     isPrimary: img.isPrimary,
+        //     order: img.order,
+        //   }))
+        // );
+
         return {
-          colorName: variant.colorName,
-          colorCode: variant.colorCode,
+          colorName: variant.colorName || "Default",
+          colorCode: variant.colorCode || "#000000",
           images: variantImages,
-          sizeVariants: variant.sizeVariants.map((sizeVariant) => ({
-            size: sizeVariant.size,
-            customSize: sizeVariant.customSize,
+          sizeVariants: (variant.sizeVariants || []).map((sizeVariant) => ({
+            size: sizeVariant.size || "",
+            customSize: sizeVariant.customSize || "",
             stock: parseInt(sizeVariant.stock || 0),
             priceAdjustment: parseFloat(sizeVariant.priceAdjustment || 0),
           })),
@@ -468,7 +510,7 @@ const updateProduct = async (req, res, next) => {
 
     // Calculate total stock from all variants
     const totalStock = updatedColorVariants.reduce((sum, variant) => {
-      const variantStock = variant.sizeVariants.reduce(
+      const variantStock = (variant.sizeVariants || []).reduce(
         (sizeSum, sizeVariant) => sizeSum + (sizeVariant.stock || 0),
         0
       );
@@ -498,6 +540,8 @@ const updateProduct = async (req, res, next) => {
       hasVariants: updatedColorVariants.length > 0,
     };
 
+    // console.log("Update Data:", updateData);
+
     const updatedProduct = await Product.findByIdAndUpdate(
       productId,
       updateData,
@@ -512,6 +556,7 @@ const updateProduct = async (req, res, next) => {
       product: updatedProduct,
     });
   } catch (error) {
+    console.error("Update Product Error:", error);
     next(error);
   }
 };
