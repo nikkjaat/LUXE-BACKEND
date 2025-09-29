@@ -13,6 +13,7 @@ const {
   addCategory,
   updateCategory,
   getCategories,
+  deleteCategory,
 } = require("../controllers/Admin");
 const { protect, adminVendorAuth } = require("../middleware/auth");
 const { uploadSingle } = require("../middleware/upload");
@@ -42,11 +43,18 @@ router.post(
   addCategory
 );
 router.put(
-  "/admin/categories/:id",
+  "/admin/update-category/:id",
   protect,
   adminVendorAuth,
   uploadSingle,
   updateCategory
+);
+
+router.delete(
+  "/admin/delete-category/:id",
+  protect,
+  adminVendorAuth,
+  deleteCategory
 );
 
 module.exports = router;

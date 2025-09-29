@@ -268,29 +268,19 @@ exports.addCategory = async (req, res, next) => {
   }
 };
 
-// Add these missing controller functions
-exports.getCategories = async (req, res) => {
-  try {
-    const categories = await Category.find().sort({ sortOrder: 1 });
-    res.json({
-      success: true,
-      categories,
-    });
-  } catch (error) {
-    console.error("Error fetching categories:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch categories",
-      error: error.message,
-    });
-  }
-};
-
 exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, image, isActive, slug, sortOrder, imageSource } =
       req.body;
+
+    // Validate required fields
+    if (!name || !slug) {
+      return res.status(400).json({
+        success: false,
+        message: "Name and slug are required",
+      });
+    }
 
     const category = await Category.findById(id);
     if (!category) {
@@ -300,33 +290,51 @@ exports.updateCategory = async (req, res) => {
       });
     }
 
-    // Handle image update
-    let imageData = category.image;
-    if (imageSource === "file" && req.file) {
-      const uploadResult = await uploadToCloudinary(
-        req.file.buffer,
-        "LUXE/category"
-      );
-      imageData = {
-        url: uploadResult.secure_url,
-        publicId: uploadResult.public_id,
-      };
-    } else if (imageSource === "url" && image) {
-      imageData = {
-        url: image,
-        publicId: null,
-      };
+    // Check for duplicates (excluding current category)
+    const existingCategory = await Category.findOne({
+      _id: { $ne: id },
+      $or: [{ name }, { slug }],
+    });
+
+    if (existingCategory) {
+      return res.status(400).json({
+        success: false,
+        message: "Category with this name or slug already exists",
+      });
     }
+
+    let imageUrl = category.image; // Keep existing image by default
+
+    // Handle image update - store as single string (consistent with addCategory)
+    if (imageSource === "file" && req.file) {
+      try {
+        const uploadResult = await uploadToCloudinary(
+          req.file.buffer,
+          "LUXE/category"
+        );
+        imageUrl = uploadResult.secure_url;
+      } catch (uploadError) {
+        console.error("Cloudinary upload error:", uploadError);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to upload image",
+        });
+      }
+    } else if (imageSource === "url" && image) {
+      imageUrl = image;
+    }
+    // Note: If no new image is provided, we keep the existing image
+    // Remove the else block that returns error to allow updates without changing image
 
     const updatedCategory = await Category.findByIdAndUpdate(
       id,
       {
         name,
         description,
-        image: imageData,
-        isActive: isActive === "true" || isActive === true,
         slug,
+        isActive: isActive === "true" || isActive === true,
         sortOrder: parseInt(sortOrder) || 0,
+        image: imageUrl, // Store as single string (consistent with addCategory)
       },
       { new: true }
     );
@@ -341,6 +349,24 @@ exports.updateCategory = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to update category",
+      error: error.message,
+    });
+  }
+};
+
+// Add these missing controller functions
+exports.getCategories = async (req, res) => {
+  try {
+    const categories = await Category.find().sort({ sortOrder: 1 });
+    res.json({
+      success: true,
+      categories,
+    });
+  } catch (error) {
+    console.error("Error fetching categories:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch categories",
       error: error.message,
     });
   }
