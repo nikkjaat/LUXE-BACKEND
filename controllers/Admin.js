@@ -345,7 +345,7 @@ exports.updateCategory = async (req, res) => {
       data: updatedCategory,
     });
   } catch (error) {
-    console.error("Error updating category:", error);
+    console.error("Error updating category-", error);
     res.status(500).json({
       success: false,
       message: "Failed to update category",
