@@ -8,21 +8,14 @@ const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
 dotenv.config();
 
-// Import routes
+/* ---------------- Import Routes ---------------- */
 const authRoutes = require("./routes/auth.js");
 const userRoutes = require("./routes/user.js");
 const productRoutes = require("./routes/products.js");
 const adminRoutes = require("./routes/admin.js");
 const customerRoutes = require("./routes/Customer.js");
-// const orderRoutes = require('./routes/orders.js');
-// const vendorRoutes = require('./routes/vendors.js');
-// const reviewRoutes = require('./routes/reviews.js');
-// const socialRoutes = require('./routes/social.js');
-// const promotionRoutes = require('./routes/promotions.js');
-// const analyticsRoutes = require('./routes/analytics.js');
-// const notificationRoutes = require('./routes/notifications.js');
 
-// Import middleware
+/* ---------------- Import Middleware ---------------- */
 const { errorHandler } = require("./middleware/errorHandler.js");
 const { notFound } = require("./middleware/notFound.js");
 const corsOptions = require("./middleware/allowedCors.js");
@@ -30,31 +23,64 @@ const corsOptions = require("./middleware/allowedCors.js");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Security middleware
+/* ---------------- Security Middleware ---------------- */
 app.use(helmet());
 app.use(compression());
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: "Too many requests from this IP, please try again later.",
-});
-app.use("/api/", limiter);
-
-// CORS configuration
+/* ---------------- CORS ---------------- */
 app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
-// Body parsing middleware
+/* ---------------- Rate Limiters ---------------- */
+// Strict → for sensitive routes (auth)
+const strictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // only 20 attempts
+  handler: (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.status(429).json({
+      success: false,
+      message: "Too many login/register attempts. Please try again later.",
+    });
+  },
+});
+
+// Admin → medium/high limit
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 2000,
+  handler: (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.status(429).json({
+      success: false,
+      message: "Too many requests to admin APIs. Please slow down.",
+    });
+  },
+});
+
+// Public → very high or effectively unlimited
+const publicLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10000,
+  handler: (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.status(429).json({
+      success: false,
+      message: "Too many requests to public API. Please slow down.",
+    });
+  },
+});
+
+/* ---------------- Body Parsing ---------------- */
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// Logging middleware
-if (process.env.NODE_ENV === "development") {
-  app.use(morgan("dev"));
-}
+/* ---------------- Logging ---------------- */
+// if (process.env.NODE_ENV === "development") {
+//   app.use(morgan("dev"));
+// }
 
-// Connect to MongoDB
+/* ---------------- DB Connection ---------------- */
 mongoose
   .connect(
     process.env.MONGODB_URI || "mongodb://localhost:27017/luxe-ecommerce"
@@ -62,21 +88,21 @@ mongoose
   .then(() => console.log("✅ Connected to MongoDB"))
   .catch((error) => console.error("❌ MongoDB connection error:", error));
 
-// Routes
-app.use("/api/auth", authRoutes);
-app.use("/api/user", userRoutes);
-app.use("/api/products", productRoutes);
-app.use("/api", adminRoutes);
-app.use("/api/customer", customerRoutes);
-// app.use('/api/orders', orderRoutes);
-// app.use('/api/vendors', vendorRoutes);
-// app.use('/api/reviews', reviewRoutes);
-// app.use('/api/social', socialRoutes);
-// app.use('/api/promotions', promotionRoutes);
-// app.use('/api/analytics', analyticsRoutes);
-// app.use('/api/notifications', notificationRoutes);
+/* ---------------- Routes ---------------- */
+// Sensitive routes → strictLimiter
+app.use("/api/auth", strictLimiter, authRoutes);
 
-// Health check endpoint
+// Public routes → relaxedLimiter
+app.use("/api/products", publicLimiter, productRoutes);
+
+// Admin routes → adminLimiter
+app.use("/api", adminLimiter, adminRoutes);
+
+// Normal user/customer routes (no strict limit)
+app.use("/api/user", userRoutes);
+app.use("/api/customer", customerRoutes);
+
+// Health check
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     status: "OK",
@@ -85,10 +111,11 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Error handling middleware
+/* ---------------- Error Handling ---------------- */
 app.use(notFound);
 app.use(errorHandler);
 
+/* ---------------- Start Server ---------------- */
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(
