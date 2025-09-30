@@ -341,8 +341,8 @@ const createProduct = async (req, res, next) => {
 const updateProduct = async (req, res, next) => {
   try {
     const productId = req.params.id;
-    let product = await Product.findById(productId);
 
+    let product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({
         success: false,
@@ -361,13 +361,20 @@ const updateProduct = async (req, res, next) => {
       });
     }
 
-    // Parse the JSON strings from form data
+    // ✅ If only single/simple field (like status, price etc.) is coming → update directly
+    if (req.body && Object.keys(req.body).length === 1 && req.body.status) {
+      product.status = req.body.status;
+      await product.save();
+      return res.status(200).json({ success: true, product });
+    }
+
+    // ---- Otherwise do the full update logic with images/variants ----
+
     const colorVariantsData = JSON.parse(req.body.colorVariants || "[]");
     const categoryFields = JSON.parse(req.body.categoryFields || "{}");
     const commonSpecs = JSON.parse(req.body.commonSpecs || "{}");
     const tags = JSON.parse(req.body.tags || "[]");
 
-    // Parse kept and deleted images from form data
     const keptImages = req.body.keptImages
       ? JSON.parse(req.body.keptImages)
       : [];
@@ -375,10 +382,6 @@ const updateProduct = async (req, res, next) => {
       ? JSON.parse(req.body.deletedImages)
       : [];
 
-    // console.log("Kept Images:", keptImages);
-    // console.log("Deleted Images:", deletedImages);
-
-    // Handle deleted images first
     if (deletedImages.length > 0) {
       await Promise.all(
         deletedImages.map((image) =>
@@ -389,31 +392,25 @@ const updateProduct = async (req, res, next) => {
       );
     }
 
-    // Handle image processing for each color variant
-    // Handle image processing for each color variant
     const updatedColorVariants = await Promise.all(
       colorVariantsData.map(async (variant, colorIndex) => {
         let variantImages = [];
-
-        // Filter kept images for this specific color variant
         const variantKeptImages = keptImages.filter(
           (img) => img.colorIndex === colorIndex
         );
 
-        // Add kept images with their original primary status
         if (variantKeptImages.length > 0) {
           variantImages.push(
             ...variantKeptImages.map((img) => ({
               url: img.url || img.secure_url,
               secure_url: img.secure_url || img.url,
               alt: img.alt,
-              isPrimary: img.isPrimary || false, // Preserve the primary status from frontend
+              isPrimary: img.isPrimary || false,
               order: img.order || 0,
               publicId: img.publicId,
             }))
           );
         } else {
-          // Fallback: if no kept images specified, keep existing images for this variant
           const existingVariantImages =
             product.colorVariants[colorIndex]?.images || [];
           variantImages = existingVariantImages.filter(
@@ -424,7 +421,6 @@ const updateProduct = async (req, res, next) => {
           );
         }
 
-        // Process new image uploads for this color variant
         const colorVariantFiles = req.files
           ? req.files.filter((file) =>
               file.fieldname.startsWith(`colorImages_${colorIndex}`)
@@ -438,10 +434,8 @@ const updateProduct = async (req, res, next) => {
             )
           );
 
-          // Check if any existing image is already primary
           const hasExistingPrimary = variantImages.some((img) => img.isPrimary);
 
-          // Process image metadata for new images
           newImages.forEach((upload, imageIndex) => {
             const metadataField = `imageMetadata_${colorIndex}_${imageIndex}`;
             const metadata = req.body[metadataField]
@@ -464,16 +458,13 @@ const updateProduct = async (req, res, next) => {
           });
         }
 
-        // Ensure proper ordering
         variantImages = variantImages.map((img, index) => ({
           ...img,
           order: index,
         }));
 
-        // Ensure only one primary image exists
         const primaryImages = variantImages.filter((img) => img.isPrimary);
         if (primaryImages.length > 1) {
-          // If multiple primary images, keep only the first one as primary
           let foundPrimary = false;
           variantImages = variantImages.map((img) => ({
             ...img,
@@ -481,18 +472,8 @@ const updateProduct = async (req, res, next) => {
               !foundPrimary && img.isPrimary ? (foundPrimary = true) : false,
           }));
         } else if (variantImages.length > 0 && primaryImages.length === 0) {
-          // If no primary image, set the first one as primary
           variantImages[0].isPrimary = true;
         }
-
-        // console.log(
-        //   `Final images for color ${colorIndex}:`,
-        //   variantImages.map((img) => ({
-        //     alt: img.alt,
-        //     isPrimary: img.isPrimary,
-        //     order: img.order,
-        //   }))
-        // );
 
         return {
           colorName: variant.colorName || "Default",
@@ -508,7 +489,6 @@ const updateProduct = async (req, res, next) => {
       })
     );
 
-    // Calculate total stock from all variants
     const totalStock = updatedColorVariants.reduce((sum, variant) => {
       const variantStock = (variant.sizeVariants || []).reduce(
         (sizeSum, sizeVariant) => sizeSum + (sizeVariant.stock || 0),
@@ -517,44 +497,45 @@ const updateProduct = async (req, res, next) => {
       return sum + variantStock;
     }, 0);
 
-    // Prepare update data
     const updateData = {
-      name: req.body.name,
-      description: req.body.description,
-      price: Number(req.body.price),
-      category: JSON.parse(req.body.category || "{}"),
-      originalPrice: Number(req.body.originalPrice || 0),
-      brand: req.body.brand || "",
-      badge: req.body.badge || "",
-      status: req.body.status || "active",
-      categoryFields,
-      commonSpecs: {
-        weight: commonSpecs.weight || { value: "", unit: "kg" },
-        material: commonSpecs.material || "",
-        warranty: commonSpecs.warranty || "",
-        features: commonSpecs.features || [],
-      },
-      tags,
-      colorVariants: updatedColorVariants,
-      stock: totalStock,
-      hasVariants: updatedColorVariants.length > 0,
+      name: req.body.name ?? product.name,
+      description: req.body.description ?? product.description,
+      price: req.body.price ? Number(req.body.price) : product.price,
+      category: req.body.category
+        ? JSON.parse(req.body.category)
+        : product.category,
+      originalPrice: req.body.originalPrice
+        ? Number(req.body.originalPrice)
+        : product.originalPrice,
+      brand: req.body.brand ?? product.brand,
+      badge: req.body.badge ?? product.badge,
+      status: req.body.status ?? product.status,
+      categoryFields: Object.keys(categoryFields).length
+        ? categoryFields
+        : product.categoryFields,
+      commonSpecs: Object.keys(commonSpecs).length
+        ? {
+            weight: commonSpecs.weight || { value: "", unit: "kg" },
+            material: commonSpecs.material || "",
+            warranty: commonSpecs.warranty || "",
+            features: commonSpecs.features || [],
+          }
+        : product.commonSpecs,
+      tags: tags.length ? tags : product.tags,
+      colorVariants: updatedColorVariants.length
+        ? updatedColorVariants
+        : product.colorVariants,
+      stock: totalStock || product.stock,
+      hasVariants: updatedColorVariants.length > 0 ? true : product.hasVariants,
     };
-
-    // console.log("Update Data:", updateData);
 
     const updatedProduct = await Product.findByIdAndUpdate(
       productId,
       updateData,
-      {
-        new: true,
-        runValidators: true,
-      }
+      { new: true, runValidators: true }
     ).populate("vendor", "name email vendorInfo");
 
-    res.status(200).json({
-      success: true,
-      product: updatedProduct,
-    });
+    res.status(200).json({ success: true, product: updatedProduct });
   } catch (error) {
     console.error("Update Product Error:", error);
     next(error);
