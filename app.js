@@ -14,6 +14,7 @@ const userRoutes = require("./routes/user.js");
 const productRoutes = require("./routes/products.js");
 const adminRoutes = require("./routes/admin.js");
 const customerRoutes = require("./routes/Customer.js");
+const searchRoutes = require("./routes/search.js");
 
 /* ---------------- Import Middleware ---------------- */
 const { errorHandler } = require("./middleware/errorHandler.js");
@@ -101,6 +102,7 @@ app.use("/api", adminLimiter, adminRoutes);
 // Normal user/customer routes (no strict limit)
 app.use("/api/user", userRoutes);
 app.use("/api/customer", customerRoutes);
+app.use("/api/search", publicLimiter, searchRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

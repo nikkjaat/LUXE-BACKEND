@@ -20,9 +20,16 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: [true, "Password is required"],
+      required: function () {
+        return !this.googleId;
+      },
       minlength: [6, "Password must be at least 6 characters"],
       select: false,
+    },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
     },
     role: {
       type: String,
@@ -86,6 +93,10 @@ const userSchema = new mongoose.Schema(
           trim: true,
         },
         color: {
+          type: String,
+          trim: true,
+        },
+        image: {
           type: String,
           trim: true,
         },
@@ -192,9 +203,8 @@ userSchema.index({ email: 1 });
 userSchema.index({ role: 1 });
 userSchema.index({ "vendorInfo.status": 1 });
 
-// Hash password before saving
 userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
+  if (!this.isModified("password") || !this.password) return next();
 
   try {
     const salt = await bcrypt.genSalt(12);

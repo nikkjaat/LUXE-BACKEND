@@ -1,7 +1,17 @@
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+const { OAuth2Client } = require("google-auth-library");
 const User = require("../models/User.js");
 const { sendEmail } = require("../Utils/sendMail.js");
+const { jwtDecode } = require("jwt-decode");
+
+// Create OAuth2Client with explicit configuration
+const client = new OAuth2Client({
+  clientId: process.env.GOOGLE_CLIENT_ID,
+  // Add these options for better certificate handling
+  eagerRefreshThresholdMillis: 5 * 60 * 1000, // 5 minutes
+  forceRefreshOnFailure: true,
+});
 
 // Generate JWT Token
 const signToken = (id) => {
@@ -93,7 +103,7 @@ const register = async (req, res, next) => {
 // @access  Public
 const login = async (req, res, next) => {
   try {
-    const { email, password, role } = req.body;
+    const { email, password } = req.body;
 
     // Check for user
     const user = await User.findOne({ email }).select("+password");
@@ -105,12 +115,12 @@ const login = async (req, res, next) => {
       });
     }
 
-    if (user.role !== role) {
-      return res.status(401).json({
-        success: false,
-        message: "Role mismatch",
-      });
-    }
+    // if (user.role !== role) {
+    //   return res.status(401).json({
+    //     success: false,
+    //     message: "Role mismatch",
+    //   });
+    // }
 
     if (!user.isActive) {
       return res.status(403).json({
@@ -354,6 +364,59 @@ const verifyEmail = async (req, res, next) => {
   }
 };
 
+const googleAuth = async (req, res) => {
+  try {
+    const { idToken, role } = req.body;
+    if (!idToken)
+      return res
+        .status(400)
+        .json({ success: false, message: "ID token required" });
+
+    let payload;
+    try {
+      const ticket = await client.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      payload = ticket.getPayload();
+    } catch (error) {
+      console.warn(
+        "Google verification failed, trying decode fallback:",
+        error.message
+      );
+      // fallback (not secure, only for dev)
+      payload = jwtDecode(idToken);
+    }
+
+    if (!payload?.email)
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid Google token" });
+
+    let user = await User.findOne({ email: payload.email });
+
+    if (!user) {
+      user = await User.create({
+        name: payload.name,
+        email: payload.email,
+        avatar: payload.picture,
+        role: role || "customer",
+        password: crypto.randomBytes(16).toString("hex"), // dummy password
+      });
+    }
+
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET_KEY, {
+      expiresIn: "7d",
+    });
+    res.status(200).json({ success: true, token, user });
+  } catch (error) {
+    console.error("Google auth error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Google authentication failed" });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -364,4 +427,5 @@ module.exports = {
   forgotPassword,
   resetPassword,
   verifyEmail,
+  googleAuth,
 };

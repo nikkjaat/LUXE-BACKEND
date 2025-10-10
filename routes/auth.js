@@ -11,6 +11,7 @@ const {
   forgotPassword,
   resetPassword,
   verifyEmail,
+  googleAuth,
 } = require("../controllers/authController.js");
 
 const { protect } = require("../middleware/auth.js");
@@ -70,6 +71,7 @@ const changePasswordValidation = [
 // Routes
 router.post("/register", registerValidation, register);
 router.post("/login", loginValidation, login);
+router.post("/google", googleAuth);
 router.post("/logout", logout);
 router.get("/me", protect, getMe);
 router.put("/profile", protect, updateProfileValidation, updateProfile);

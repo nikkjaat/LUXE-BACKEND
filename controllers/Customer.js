@@ -22,14 +22,16 @@ exports.getCartItems = async (req, res, next) => {
 exports.addToCart = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    const { id, quantity = 1, size, color } = req.body;
-
-    const cartItem = user.cart.find((item) => item.productId.equals(id));
+    const { id, quantity = 1, size, color, image } = req.body;
+    const cartItem = user.cart.find(
+      (item) =>
+        item.productId.equals(id) && item.size === size && item.color === color
+    );
 
     if (cartItem) {
       cartItem.quantity += quantity;
     } else {
-      user.cart.push({ productId: id, quantity, size, color });
+      user.cart.push({ productId: id, quantity, size, color, image });
     }
 
     await user.save();
@@ -106,7 +108,7 @@ exports.updateQuantity = async (req, res, next) => {
     // console.log(userId, id, quantity);
     // Find the user and update the quantity of the specified product in the cart
     const user = await User.findOneAndUpdate(
-      { _id: userId, "cart.productId": id },
+      { _id: userId, "cart._id": id },
       { $set: { "cart.$.quantity": quantity } },
       { new: true }
     ).populate("cart.productId");
@@ -140,7 +142,7 @@ exports.removeFromCart = async (req, res, next) => {
       userId,
       {
         $pull: {
-          cart: { productId: id },
+          cart: { _id: id },
         },
       },
       { new: true }
