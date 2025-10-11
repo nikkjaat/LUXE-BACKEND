@@ -24,10 +24,241 @@ const SYNONYMS_MAP = {
   bag: ["handbag", "purse"],
 };
 
+// NEW: Product type keywords for category matching
+const productTypeKeywords = [
+  "shirt",
+  "shirts",
+  "t-shirt",
+  "t-shirts",
+  "tshirt",
+  "tshirts",
+  "jeans",
+  "pants",
+  "trousers",
+  "shorts",
+  "jacket",
+  "jackets",
+  "coat",
+  "coats",
+  "sweater",
+  "sweaters",
+  "hoodie",
+  "hoodies",
+  "dress",
+  "dresses",
+  "skirt",
+  "skirts",
+  "blouse",
+  "blouses",
+  "watch",
+  "watches",
+  "clock",
+  "clocks",
+  "timepiece",
+  "shoe",
+  "shoes",
+  "sneaker",
+  "sneakers",
+  "boot",
+  "boots",
+  "bag",
+  "bags",
+  "handbag",
+  "handbags",
+  "backpack",
+  "backpacks",
+  "phone",
+  "phones",
+  "mobile",
+  "mobiles",
+  "smartphone",
+  "smartphones",
+  "laptop",
+  "laptops",
+  "computer",
+  "computers",
+  "tablet",
+  "tablets",
+  "headphone",
+  "headphones",
+  "earphone",
+  "earphones",
+  "earbud",
+  "earbuds",
+  "camera",
+  "cameras",
+  "tv",
+  "television",
+  "televisions",
+  "book",
+  "books",
+  "novel",
+  "novels",
+  "magazine",
+  "magazines",
+  "toy",
+  "toys",
+  "game",
+  "games",
+  "doll",
+  "dolls",
+];
+
+// NEW: Primary category keywords
+const primaryCategoryKeywords = {
+  men: ["men", "male", "man", "mens", "men's", "mans", "gents", "gentleman"],
+  women: [
+    "women",
+    "female",
+    "woman",
+    "womens",
+    "women's",
+    "womans",
+    "ladies",
+    "lady",
+  ],
+  boys: ["boys", "boy", "lads"],
+  girls: ["girls", "girl"],
+  kids: [
+    "kids",
+    "kid",
+    "children",
+    "child",
+    "infant",
+    "toddler",
+    "baby",
+    "babies",
+  ],
+};
+
+// NEW: Stop words
+const stopWords = [
+  "for",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "in",
+  "on",
+  "at",
+  "to",
+  "with",
+  "of",
+  "from",
+  "by",
+  "as",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "have",
+  "has",
+  "had",
+  "do",
+  "does",
+  "did",
+];
+
 const getSynonyms = (word) => {
   const normalized = word.toLowerCase().trim();
   return SYNONYMS_MAP[normalized] || [];
 };
+
+// NEW: Tokenize query with stop words removal
+function tokenizeQuery(query) {
+  const words = query.toLowerCase().trim().split(/\s+/);
+  return words.filter((word) => !stopWords.includes(word));
+}
+
+// NEW: Detect primary category from query tokens
+function detectPrimaryCategoryFromQuery(tokens) {
+  for (const [category, keywords] of Object.entries(primaryCategoryKeywords)) {
+    for (const keyword of keywords) {
+      if (tokens.includes(keyword)) {
+        return { category, keyword };
+      }
+    }
+  }
+  return null;
+}
+
+// NEW: Detect product type from query tokens
+function detectProductTypeFromQuery(tokens) {
+  for (const token of tokens) {
+    if (productTypeKeywords.includes(token)) {
+      return token;
+    }
+  }
+  return null;
+}
+
+// NEW: Build enhanced search filter for legacy search
+function buildEnhancedSearchFilter(tokens) {
+  const filter = {
+    status: "active",
+  };
+
+  const detectedPrimaryCategory = detectPrimaryCategoryFromQuery(tokens);
+  const detectedProductType = detectProductTypeFromQuery(tokens);
+
+  // If we have both a primary category AND a product type, use strict matching
+  if (detectedPrimaryCategory && detectedProductType) {
+    const categoryConditions = primaryCategoryKeywords[
+      detectedPrimaryCategory.category
+    ].map((keyword) => ({
+      "category.main": new RegExp(`\\b${keyword}\\b`, "i"),
+    }));
+
+    // Build product type conditions - search in ALL category levels
+    const productTypeConditions = [
+      { "category.main": new RegExp(`\\b${detectedProductType}\\b`, "i") },
+      { "category.sub": new RegExp(`\\b${detectedProductType}\\b`, "i") },
+      { "category.type": new RegExp(`\\b${detectedProductType}\\b`, "i") },
+      { "category.variant": new RegExp(`\\b${detectedProductType}\\b`, "i") },
+      { "category.style": new RegExp(`\\b${detectedProductType}\\b`, "i") },
+      {
+        "category.allLevels.name": new RegExp(
+          `\\b${detectedProductType}\\b`,
+          "i"
+        ),
+      },
+    ];
+
+    // STRICT FILTER: Must match BOTH category AND product type in category hierarchy
+    filter.$and = [
+      { $or: categoryConditions }, // Must be in the detected category (men/women/etc.)
+      { $or: productTypeConditions }, // Must have the product type in category
+    ];
+
+    return filter;
+  }
+
+  // Fallback to regular search if no category+product type combination detected
+  const searchRegexes = tokens.map(
+    (token) =>
+      new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i")
+  );
+
+  filter.$or = [
+    { name: { $in: searchRegexes } },
+    { description: { $in: searchRegexes } },
+    { brand: { $in: searchRegexes } },
+    { tags: { $in: searchRegexes } },
+    { "category.main": { $in: searchRegexes } },
+    { "category.sub": { $in: searchRegexes } },
+    { "category.type": { $in: searchRegexes } },
+    { "category.variant": { $in: searchRegexes } },
+    { "category.style": { $in: searchRegexes } },
+    { "category.allLevels.name": { $in: searchRegexes } },
+    { "colorVariants.colorName": { $in: searchRegexes } },
+  ];
+
+  return filter;
+}
 
 const getSearchSuggestions = async (req, res) => {
   try {
@@ -263,6 +494,7 @@ const getPopularSearches = async (req, res) => {
   }
 };
 
+// UPDATED: Legacy search products with enhanced category filtering
 const searchProducts = async (req, res) => {
   try {
     const {
@@ -283,161 +515,50 @@ const searchProducts = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
     let query = { status: "active" };
     let sort = {};
-    let aggregationPipeline = [];
 
+    // NEW: Use enhanced search filter for queries
     if (q && q.trim()) {
       await SearchAnalytics.recordSearch(q.trim());
 
-      const searchTerms = q.trim().split(/\s+/);
-      const allSynonyms = [];
-      searchTerms.forEach((term) => {
-        allSynonyms.push(...getSynonyms(term));
-      });
+      const tokens = tokenizeQuery(q.trim());
 
-      const expandedTerms = [...searchTerms, ...allSynonyms];
-
-      const wordBoundaryRegexes = expandedTerms.map(
-        (term) =>
-          new RegExp(
-            `\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
-            "i"
-          )
-      );
-
-      query.$or = [
-        { name: { $in: wordBoundaryRegexes } },
-        { description: { $in: wordBoundaryRegexes } },
-        { brand: { $in: wordBoundaryRegexes } },
-        { tags: { $in: wordBoundaryRegexes } },
-        { "category.main": { $in: wordBoundaryRegexes } },
-        { "category.sub": { $in: wordBoundaryRegexes } },
-        { "colorVariants.colorName": { $in: wordBoundaryRegexes } },
-      ];
-
-      if (sortBy === "relevance") {
-        aggregationPipeline = [
-          { $match: query },
-          {
-            $addFields: {
-              relevanceScore: {
-                $add: [
-                  {
-                    $cond: [
-                      {
-                        $regexMatch: {
-                          input: "$name",
-                          regex: q.trim(),
-                          options: "i",
-                        },
-                      },
-                      50,
-                      0,
-                    ],
-                  },
-                  {
-                    $cond: [
-                      {
-                        $gt: [
-                          {
-                            $size: {
-                              $filter: {
-                                input: "$tags",
-                                as: "tag",
-                                cond: {
-                                  $regexMatch: {
-                                    input: "$$tag",
-                                    regex: q.trim(),
-                                    options: "i",
-                                  },
-                                },
-                              },
-                            },
-                          },
-                          0,
-                        ],
-                      },
-                      30,
-                      0,
-                    ],
-                  },
-                  {
-                    $cond: [
-                      {
-                        $regexMatch: {
-                          input: "$description",
-                          regex: q.trim(),
-                          options: "i",
-                        },
-                      },
-                      10,
-                      0,
-                    ],
-                  },
-                  {
-                    $cond: [
-                      {
-                        $or: [
-                          {
-                            $regexMatch: {
-                              input: "$category.main",
-                              regex: q.trim(),
-                              options: "i",
-                            },
-                          },
-                          {
-                            $regexMatch: {
-                              input: "$category.sub",
-                              regex: q.trim(),
-                              options: "i",
-                            },
-                          },
-                        ],
-                      },
-                      10,
-                      0,
-                    ],
-                  },
-                  { $multiply: ["$viewCount", 0.01] },
-                  { $multiply: ["$salesCount", 0.05] },
-                  { $multiply: ["$rating.average", 2] },
-                ],
-              },
-            },
-          },
-          { $sort: { relevanceScore: -1, "rating.average": -1 } },
+      if (tokens.length > 0) {
+        // Use the enhanced filter that handles category+product type combinations
+        const enhancedFilter = buildEnhancedSearchFilter(tokens);
+        Object.assign(query, enhancedFilter);
+      } else {
+        // Fallback to simple search if no meaningful tokens
+        const searchRegex = new RegExp(
+          q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+          "i"
+        );
+        query.$or = [
+          { name: searchRegex },
+          { description: searchRegex },
+          { brand: searchRegex },
+          { tags: searchRegex },
         ];
       }
     }
 
+    // Apply additional filters (these work with the enhanced filter)
+    if (mainCategory && mainCategory !== "all") {
+      query["category.main"] = new RegExp(`\\b${mainCategory}\\b`, "i");
+    }
+    if (subCategory && subCategory !== "all") {
+      query["category.sub"] = new RegExp(`\\b${subCategory}\\b`, "i");
+    }
     if (category && category !== "all") {
-      const categoryRegex = new RegExp(
-        `\\b${category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
-        "i"
-      );
       if (!query.$or) query.$or = [];
       query.$or.push(
-        { "category.main": categoryRegex },
-        { "category.sub": categoryRegex }
-      );
-    }
-    if (mainCategory && mainCategory !== "all") {
-      query["category.main"] = new RegExp(
-        `\\b${mainCategory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
-        "i"
-      );
-    }
-    if (subCategory) {
-      query["category.sub"] = new RegExp(
-        `\\b${subCategory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
-        "i"
+        { "category.main": new RegExp(`\\b${category}\\b`, "i") },
+        { "category.sub": new RegExp(`\\b${category}\\b`, "i") },
+        { "category.type": new RegExp(`\\b${category}\\b`, "i") }
       );
     }
 
     if (brand) {
-      query.brand = new RegExp(
-        `\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
-        "i"
-      );
+      query.brand = new RegExp(`\\b${brand}\\b`, "i");
     }
 
     if (minPrice || maxPrice) {
@@ -454,69 +575,40 @@ const searchProducts = async (req, res) => {
       query.stock = { $gt: 0 };
     }
 
-    if (sortBy !== "relevance") {
-      switch (sortBy) {
-        case "price-low":
-          sort = { price: 1 };
-          break;
-        case "price-high":
-          sort = { price: -1 };
-          break;
-        case "rating":
-          sort = { "rating.average": -1, "rating.count": -1 };
-          break;
-        case "popularity":
-          sort = { salesCount: -1, viewCount: -1 };
-          break;
-        case "newest":
-          sort = { createdAt: -1 };
-          break;
-        default:
-          sort = { "rating.average": -1, createdAt: -1 };
-      }
+    // Set sort order
+    switch (sortBy) {
+      case "price-low":
+        sort = { price: 1 };
+        break;
+      case "price-high":
+        sort = { price: -1 };
+        break;
+      case "rating":
+        sort = { "rating.average": -1, "rating.count": -1 };
+        break;
+      case "popularity":
+        sort = { salesCount: -1, viewCount: -1 };
+        break;
+      case "newest":
+        sort = { createdAt: -1 };
+        break;
+      case "relevance":
+      default:
+        // For relevance, use a combination of factors
+        sort = { salesCount: -1, "rating.average": -1, viewCount: -1 };
+        break;
     }
 
-    let products;
-    let total;
+    // Execute query
+    const products = await Product.find(query)
+      .populate("vendor", "vendorInfo.shopName")
+      .sort(sort)
+      .skip(skip)
+      .limit(parseInt(limit));
 
-    if (aggregationPipeline.length > 0) {
-      const countPipeline = [...aggregationPipeline, { $count: "total" }];
-      const countResult = await Product.aggregate(countPipeline);
-      total = countResult[0]?.total || 0;
+    const total = await Product.countDocuments(query);
 
-      products = await Product.aggregate([
-        ...aggregationPipeline,
-        { $skip: skip },
-        { $limit: parseInt(limit) },
-        {
-          $lookup: {
-            from: "users",
-            localField: "vendor",
-            foreignField: "_id",
-            as: "vendorData",
-          },
-        },
-        {
-          $addFields: {
-            vendor: { $arrayElemAt: ["$vendorData", 0] },
-          },
-        },
-        {
-          $project: {
-            vendorData: 0,
-          },
-        },
-      ]);
-    } else {
-      products = await Product.find(query)
-        .populate("vendor", "vendorInfo.shopName")
-        .sort(sort)
-        .skip(skip)
-        .limit(parseInt(limit));
-
-      total = await Product.countDocuments(query);
-    }
-
+    // Get filter aggregations
     const filterAggregations = await Product.aggregate([
       { $match: query },
       {
@@ -554,6 +646,11 @@ const searchProducts = async (req, res) => {
       },
     ]);
 
+    // NEW: Detect what was searched for response metadata
+    const tokens = q ? tokenizeQuery(q.trim()) : [];
+    const detectedPrimaryCategory = detectPrimaryCategoryFromQuery(tokens);
+    const detectedProductType = detectProductTypeFromQuery(tokens);
+
     res.json({
       success: true,
       query: q,
@@ -564,7 +661,9 @@ const searchProducts = async (req, res) => {
       products,
       filters: filterAggregations[0] || {},
       searchMeta: {
-        searchTerms: q ? q.trim().split(/\s+/) : [],
+        searchTerms: tokens,
+        detectedPrimaryCategory: detectedPrimaryCategory?.category || null,
+        detectedProductType: detectedProductType || null,
         hasFilters: !!(
           category ||
           brand ||
@@ -645,10 +744,11 @@ const recordSearchClick = async (req, res) => {
 
 router.get("/suggestions", getSearchSuggestions);
 router.get("/popular", getPopularSearches);
-router.get("/products", searchProducts);
+router.get("/products", searchProducts); // UPDATED with enhanced filtering
 router.get("/autocomplete", getSearchAutocomplete);
 router.post("/click", recordSearchClick);
 
+// Smart search routes (keep these as they have the most advanced logic)
 router.get("/smart/products", smartSearchProducts);
 router.get("/smart/suggestions", smartSearchSuggestions);
 router.get("/smart/autocomplete", smartSearchAutocomplete);

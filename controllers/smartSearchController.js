@@ -129,6 +129,7 @@ const productNameNormalizationMap = {
   backpacks: "bag",
 };
 
+// Extended stop words to include common prepositions and connectors
 const stopWords = [
   "for",
   "the",
@@ -143,6 +144,43 @@ const stopWords = [
   "with",
   "of",
   "from",
+  "by",
+  "as",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "have",
+  "has",
+  "had",
+  "do",
+  "does",
+  "did",
+  "will",
+  "would",
+  "could",
+  "should",
+  "may",
+  "might",
+  "must",
+  "this",
+  "that",
+  "these",
+  "those",
+  "my",
+  "your",
+  "his",
+  "her",
+  "our",
+  "their",
+  "me",
+  "you",
+  "him",
+  "us",
+  "them",
 ];
 
 const primaryCategoryKeywords = {
@@ -175,6 +213,86 @@ const primaryCategoryKeywords = {
   unisex: ["unisex", "neutral", "gender-neutral"],
 };
 
+// NEW: Product type keywords that should be treated as main product categories
+const productTypeKeywords = [
+  "shirt",
+  "shirts",
+  "t-shirt",
+  "t-shirts",
+  "tshirt",
+  "tshirts",
+  "jeans",
+  "pants",
+  "trousers",
+  "shorts",
+  "jacket",
+  "jackets",
+  "coat",
+  "coats",
+  "sweater",
+  "sweaters",
+  "hoodie",
+  "hoodies",
+  "dress",
+  "dresses",
+  "skirt",
+  "skirts",
+  "blouse",
+  "blouses",
+  "watch",
+  "watches",
+  "clock",
+  "clocks",
+  "timepiece",
+  "shoe",
+  "shoes",
+  "sneaker",
+  "sneakers",
+  "boot",
+  "boots",
+  "bag",
+  "bags",
+  "handbag",
+  "handbags",
+  "backpack",
+  "backpacks",
+  "phone",
+  "phones",
+  "mobile",
+  "mobiles",
+  "smartphone",
+  "smartphones",
+  "laptop",
+  "laptops",
+  "computer",
+  "computers",
+  "tablet",
+  "tablets",
+  "headphone",
+  "headphones",
+  "earphone",
+  "earphones",
+  "earbud",
+  "earbuds",
+  "camera",
+  "cameras",
+  "tv",
+  "television",
+  "televisions",
+  "book",
+  "books",
+  "novel",
+  "novels",
+  "magazine",
+  "magazines",
+  "toy",
+  "toys",
+  "game",
+  "games",
+  "doll",
+  "dolls",
+];
+
 function normalizeSearchTerm(term, normalizationMap) {
   const lowerTerm = term.toLowerCase().trim();
   return normalizationMap[lowerTerm] || lowerTerm;
@@ -196,6 +314,21 @@ function detectPrimaryCategoryFromQuery(tokens) {
   return null;
 }
 
+// NEW: Detect product type from query tokens
+function detectProductTypeFromQuery(tokens) {
+  for (const token of tokens) {
+    if (productTypeKeywords.includes(token)) {
+      return token;
+    }
+    // Also check normalized versions
+    const normalized = productNameNormalizationMap[token];
+    if (normalized && productTypeKeywords.includes(normalized)) {
+      return normalized;
+    }
+  }
+  return null;
+}
+
 function buildWordBoundaryRegex(tokens, normalizationMap) {
   const normalizedTokens = tokens.map((token) =>
     normalizeSearchTerm(token, normalizationMap)
@@ -210,7 +343,7 @@ function buildWordBoundaryRegex(tokens, normalizationMap) {
   return escapedTokens.map((token) => new RegExp(`\\b${token}\\b`, "i"));
 }
 
-// Enhanced search filter to check ALL category levels
+// FIXED: Enhanced search logic that requires BOTH category and product type matches
 function buildEnhancedSearchFilter(tokens, detectedPrimaryCategory) {
   const filter = {
     status: "active",
@@ -225,7 +358,72 @@ function buildEnhancedSearchFilter(tokens, detectedPrimaryCategory) {
     categoryNormalizationMap
   );
 
-  // Base search conditions for product fields (including color variants)
+  // NEW: Detect product type from query
+  const detectedProductType = detectProductTypeFromQuery(tokens);
+
+  // If we have both a primary category AND a product type, use strict matching
+  if (detectedPrimaryCategory && detectedProductType) {
+    const categoryConditions = primaryCategoryKeywords[
+      detectedPrimaryCategory.category
+    ].map((keyword) => ({
+      "category.main": new RegExp(`\\b${keyword}\\b`, "i"),
+    }));
+
+    // Remove the detected category and product type from search tokens
+    const remainingTokens = tokens.filter(
+      (token) =>
+        !primaryCategoryKeywords[detectedPrimaryCategory.category].includes(
+          token
+        ) && token !== detectedProductType
+    );
+
+    // Build product type conditions - search in ALL category levels
+    const productTypeConditions = [
+      { "category.main": new RegExp(`\\b${detectedProductType}\\b`, "i") },
+      { "category.sub": new RegExp(`\\b${detectedProductType}\\b`, "i") },
+      { "category.type": new RegExp(`\\b${detectedProductType}\\b`, "i") },
+      { "category.variant": new RegExp(`\\b${detectedProductType}\\b`, "i") },
+      { "category.style": new RegExp(`\\b${detectedProductType}\\b`, "i") },
+      {
+        "category.allLevels.name": new RegExp(
+          `\\b${detectedProductType}\\b`,
+          "i"
+        ),
+      },
+    ];
+
+    // Conditions for remaining tokens (like colors, brands, etc.)
+    const remainingConditions = [];
+    if (remainingTokens.length > 0) {
+      const remainingRegexes = buildWordBoundaryRegex(
+        remainingTokens,
+        productNameNormalizationMap
+      );
+
+      remainingConditions.push(
+        { name: { $in: remainingRegexes } },
+        { description: { $in: remainingRegexes } },
+        { brand: { $in: remainingRegexes } },
+        { tags: { $in: remainingRegexes } },
+        { "colorVariants.colorName": { $in: remainingRegexes } }
+      );
+    }
+
+    // STRICT FILTER: Must match BOTH category AND product type in category hierarchy
+    filter.$and = [
+      { $or: categoryConditions }, // Must be in the detected category (men/women/etc.)
+      { $or: productTypeConditions }, // Must have the product type in category
+    ];
+
+    // Add remaining conditions if any
+    if (remainingConditions.length > 0) {
+      filter.$and.push({ $or: remainingConditions });
+    }
+
+    return filter;
+  }
+
+  // Base search conditions for product fields
   const productSearchConditions = [
     { name: { $in: productNameRegexes } },
     { description: { $in: productNameRegexes } },
@@ -243,7 +441,6 @@ function buildEnhancedSearchFilter(tokens, detectedPrimaryCategory) {
     { "category.type": { $in: categoryRegexes } },
     { "category.variant": { $in: categoryRegexes } },
     { "category.style": { $in: categoryRegexes } },
-    // Also search in allLevels array
     { "category.allLevels.name": { $in: categoryRegexes } },
     { "category.fullPath": { $in: categoryRegexes } },
   ];
@@ -304,45 +501,51 @@ function buildEnhancedSearchFilter(tokens, detectedPrimaryCategory) {
     return filter;
   }
 
-  // No primary category detected - search everywhere
+  // No special case detected - search everywhere
   filter.$or = [...productSearchConditions, ...categorySearchConditions];
 
   return filter;
 }
 
-function calculateRelevanceScore(product, tokens) {
+// FIXED: Enhanced relevance scoring that heavily penalizes irrelevant category matches
+function calculateRelevanceScore(
+  product,
+  tokens,
+  detectedPrimaryCategory,
+  detectedProductType
+) {
   let score = 0;
 
-  // Name matching (highest priority)
-  const nameMatch = tokens.some((token) => {
-    const regex = new RegExp(`\\b${token}\\b`, "i");
-    return regex.test(product.name);
-  });
-  if (nameMatch) score += 50;
+  // NEW: Check if product matches the intended category and product type
+  const hasIntendedCategory = detectedPrimaryCategory
+    ? primaryCategoryKeywords[detectedPrimaryCategory.category].some(
+        (keyword) =>
+          new RegExp(`\\b${keyword}\\b`, "i").test(product.category?.main)
+      )
+    : true;
 
-  const exactNameMatch = tokens.every((token) => {
-    const regex = new RegExp(`\\b${token}\\b`, "i");
-    return regex.test(product.name);
-  });
-  if (exactNameMatch) score += 30;
+  const hasIntendedProductType = detectedProductType
+    ? [
+        product.category?.main,
+        product.category?.sub,
+        product.category?.type,
+        product.category?.variant,
+        product.category?.style,
+      ].some(
+        (catLevel) =>
+          catLevel &&
+          new RegExp(`\\b${detectedProductType}\\b`, "i").test(catLevel)
+      )
+    : true;
 
-  // Brand matching
-  const brandMatch = tokens.some((token) => {
-    const regex = new RegExp(`\\b${token}\\b`, "i");
-    return regex.test(product.brand);
-  });
-  if (brandMatch) score += 20;
+  // HEAVY PENALTY for products that don't match the intended category+product type combination
+  if (detectedPrimaryCategory && detectedProductType) {
+    if (!hasIntendedCategory || !hasIntendedProductType) {
+      score -= 1000; // Heavy penalty to push these to bottom
+    }
+  }
 
-  // Tags matching
-  const tagsMatch = product.tags?.some((tag) =>
-    tokens.some((token) => {
-      const regex = new RegExp(`\\b${token}\\b`, "i");
-      return regex.test(tag);
-    })
-  );
-  if (tagsMatch) score += 25;
-
-  // Enhanced category matching - check ALL levels with different weights
+  // Category matching (highest priority for matching products)
   const categoryMatches = {
     main: tokens.some((token) => {
       const regex = new RegExp(`\\b${token}\\b`, "i");
@@ -372,12 +575,42 @@ function calculateRelevanceScore(product, tokens) {
     ),
   };
 
-  if (categoryMatches.main) score += 15;
-  if (categoryMatches.sub) score += 12;
-  if (categoryMatches.type) score += 10;
-  if (categoryMatches.variant) score += 8;
-  if (categoryMatches.style) score += 6;
-  if (categoryMatches.allLevels) score += 5;
+  // Higher scores for category matches (only for relevant products)
+  if (categoryMatches.main) score += 60;
+  if (categoryMatches.sub) score += 50;
+  if (categoryMatches.type) score += 45;
+  if (categoryMatches.variant) score += 40;
+  if (categoryMatches.style) score += 35;
+  if (categoryMatches.allLevels) score += 30;
+
+  // Name matching (second priority)
+  const nameMatch = tokens.some((token) => {
+    const regex = new RegExp(`\\b${token}\\b`, "i");
+    return regex.test(product.name);
+  });
+  if (nameMatch) score += 40;
+
+  const exactNameMatch = tokens.every((token) => {
+    const regex = new RegExp(`\\b${token}\\b`, "i");
+    return regex.test(product.name);
+  });
+  if (exactNameMatch) score += 25;
+
+  // Brand matching
+  const brandMatch = tokens.some((token) => {
+    const regex = new RegExp(`\\b${token}\\b`, "i");
+    return regex.test(product.brand);
+  });
+  if (brandMatch) score += 20;
+
+  // Tags matching
+  const tagsMatch = product.tags?.some((tag) =>
+    tokens.some((token) => {
+      const regex = new RegExp(`\\b${token}\\b`, "i");
+      return regex.test(tag);
+    })
+  );
+  if (tagsMatch) score += 25;
 
   // Color variant matching
   const colorVariantMatch = product.colorVariants?.some((variant) =>
@@ -403,7 +636,7 @@ function calculateRelevanceScore(product, tokens) {
   // Stock availability bonus
   if (product.stock > 0) score += 5;
 
-  return score;
+  return Math.max(0, score); // Ensure score doesn't go negative
 }
 
 const smartSearchProducts = async (req, res) => {
@@ -445,6 +678,7 @@ const smartSearchProducts = async (req, res) => {
     }
 
     const detectedPrimaryCategory = detectPrimaryCategoryFromQuery(tokens);
+    const detectedProductType = detectProductTypeFromQuery(tokens); // NEW
 
     // Use enhanced search filter
     let filter = buildEnhancedSearchFilter(tokens, detectedPrimaryCategory);
@@ -528,12 +762,18 @@ const smartSearchProducts = async (req, res) => {
         .lean();
     }
 
+    // FIXED: Pass detected category and product type to relevance scoring
     products = products.map((product) => ({
       ...product,
-      relevanceScore: calculateRelevanceScore(product, tokens),
+      relevanceScore: calculateRelevanceScore(
+        product,
+        tokens,
+        detectedPrimaryCategory,
+        detectedProductType
+      ),
     }));
 
-    // Sorting
+    // Sorting - prioritize relevance score
     if (sortBy === "relevance") {
       products.sort((a, b) => b.relevanceScore - a.relevanceScore);
     } else {
@@ -563,6 +803,9 @@ const smartSearchProducts = async (req, res) => {
           break;
       }
     }
+
+    // NEW: Filter out heavily penalized products (those with negative scores)
+    products = products.filter((product) => product.relevanceScore >= 0);
 
     const total = products.length;
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -642,6 +885,7 @@ const smartSearchProducts = async (req, res) => {
       success: true,
       query,
       detectedPrimaryCategory: detectedPrimaryCategory?.category || null,
+      detectedProductType: detectedProductType || null, // NEW
       tokens,
       count: paginatedProducts.length,
       total,
@@ -658,6 +902,7 @@ const smartSearchProducts = async (req, res) => {
       searchMeta: {
         searchTerms: tokens,
         detectedPrimaryCategory: detectedPrimaryCategory?.category || null,
+        detectedProductType: detectedProductType || null, // NEW
         hasFilters: !!(
           category ||
           brand ||
@@ -679,6 +924,9 @@ const smartSearchProducts = async (req, res) => {
     });
   }
 };
+
+// The smartSearchSuggestions and smartSearchAutocomplete functions remain the same
+// as they work fine for their purposes
 
 const smartSearchSuggestions = async (req, res) => {
   try {
