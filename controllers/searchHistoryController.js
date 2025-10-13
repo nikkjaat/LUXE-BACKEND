@@ -63,9 +63,15 @@ const addProductViewHistory = async (req, res) => {
       {
         $set: {
           productName: product.name,
-          productImage: product.images?.[0]?.url || null,
+          productImage: product.colorVariants[0].images?.[0]?.url || null,
           productPrice: product.price,
           createdAt: new Date(), // Update timestamp
+          // move to index 0
+        },
+        $setOnInsert: {
+          userId,
+          type: "product_view",
+          productId,
         },
       },
       {
