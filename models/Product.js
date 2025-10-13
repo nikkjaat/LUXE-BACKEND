@@ -172,28 +172,28 @@ const productSchema = new mongoose.Schema(
     // Category Information - Updated for 5-level hierarchy with backward compatibility
     category: {
       // Complete category hierarchy (new fields)
-      hierarchy: {
-        main: {
-          type: categoryReferenceSchema,
-          default: null,
-        },
-        subcategory: {
-          type: categoryReferenceSchema,
-          default: null,
-        },
-        type: {
-          type: categoryReferenceSchema,
-          default: null,
-        },
-        variant: {
-          type: categoryReferenceSchema,
-          default: null,
-        },
-        style: {
-          type: categoryReferenceSchema,
-          default: null,
-        },
-      },
+      // hierarchy: {
+      //   main: {
+      //     type: categoryReferenceSchema,
+      //     default: null,
+      //   },
+      //   subcategory: {
+      //     type: categoryReferenceSchema,
+      //     default: null,
+      //   },
+      //   type: {
+      //     type: categoryReferenceSchema,
+      //     default: null,
+      //   },
+      //   variant: {
+      //     type: categoryReferenceSchema,
+      //     default: null,
+      //   },
+      //   style: {
+      //     type: categoryReferenceSchema,
+      //     default: null,
+      //   },
+      // },
 
       // String paths for easy querying and display (existing fields + new ones)
       main: {
@@ -394,8 +394,32 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-// Indexes for better query performance - Updated for new category structure
-productSchema.index({ name: "text", description: "text", tags: "text" });
+// Text indexes for intelligent search with weights
+productSchema.index(
+  {
+    name: "text",
+    description: "text",
+    tags: "text",
+    brand: "text",
+    "category.main": "text",
+    "category.sub": "text",
+    "category.type": "text",
+  },
+  {
+    weights: {
+      name: 10,
+      brand: 8,
+      tags: 6,
+      "category.main": 5,
+      "category.sub": 4,
+      "category.type": 3,
+      description: 2,
+    },
+    name: "product_search_index",
+  }
+);
+
+// Individual field indexes for better query performance
 productSchema.index({ "category.main": 1 });
 productSchema.index({ "category.sub": 1 });
 productSchema.index({ "category.type": 1 });
@@ -421,6 +445,8 @@ productSchema.index({ createdAt: -1 });
 productSchema.index({ badge: 1 });
 productSchema.index({ "colorVariants.colorName": 1 });
 productSchema.index({ "colorVariants.sizeVariants.size": 1 });
+productSchema.index({ salesCount: -1 });
+productSchema.index({ viewCount: -1 });
 
 // Compound indexes for category queries (backward compatible)
 productSchema.index({ "category.main": 1, "category.sub": 1 });
@@ -435,6 +461,9 @@ productSchema.index({
   "category.type": 1,
   status: 1,
 });
+productSchema.index({ status: 1, "rating.average": -1 });
+productSchema.index({ status: 1, price: 1 });
+productSchema.index({ status: 1, createdAt: -1 });
 
 // Validation to ensure at least one size variant per color
 colorVariantSchema.pre("validate", function (next) {

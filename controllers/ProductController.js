@@ -844,7 +844,6 @@ const buildCategoryStructure = async (categoryData) => {
 // @route   POST /api/products
 // @access  Private (Vendor)
 const createProduct = async (req, res, next) => {
-  console.log(req.file, req.body);
   try {
     // Attach vendor data
     req.body.vendor = req.user._id;
@@ -895,8 +894,6 @@ const createProduct = async (req, res, next) => {
       ...req.body.category, // Keep the original string values
       ...categoryData, // Add hierarchy and allLevels
     };
-
-    console.log("Final category data:", req.body.category); // Debug log
 
     // Handle image uploads and links for color variants
     if (Array.isArray(req.body.colorVariants)) {
